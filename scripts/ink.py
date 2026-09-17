@@ -313,10 +313,17 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     if not s:
         return ""
     maxw = maxw or W_INNER
+    # ★ 登记**折行前**的原文。内容门是拿登记串去图上找，如果只登记"渲染出来的行"，
+    # 引擎把尾巴截成「…」时两边都是半句话，门永远发现不了截断
+    # （实测踩过：timeline 节点说明「…个簇，只扫最近的簇」被吃掉后半句，门报干净）。
+    _reg_text(s)
     lines = wrap_text(s, size, maxw)
     if max_lines and len(lines) > max_lines:
+        n_all = len(lines)
         lines = lines[:max_lines]
         lines[-1] = lines[-1][:-1] + "…"
+        WARN.append("[%s] 文案被截断：折行后 %d 行、上限 %d 行，尾巴成了「…」｜%s"
+                    % (tag, n_all, max_lines, strip_hl(s)[:34]))
     line_h = line_h or size * 1.34
     out = []
     y0 = y - (len(lines) - 1) * line_h * 0.5
@@ -910,7 +917,9 @@ def layout_timeline(card, seed):
         parts.append(hl_line(cx, y - 10, parse_hl(st.get("text", ""), pal, plain=True),
                              42, seed + i * 9, maxw=col_w))
         if st.get("desc"):
-            parts.append(txt_block(cx, y + 36, strip_hl(st["desc"]), 30, col_w,
+            # ★ 说明要压在标题下方：标题字号 42、基线在 y-10，两行说明会把首行上移
+            # line_h/2，用 y+36 时说明顶部（y-7.5）会穿到标题底部（y-0.8）里 —— 实测压字。
+            parts.append(txt_block(cx, y + 48, strip_hl(st["desc"]), 30, col_w,
                                    max_lines=2, tag="tl-d%d" % i))
     if card.get("note"):
         parts.append(txt_block(W_INNER / 2, avail - 20, strip_hl(card["note"]),
@@ -1406,7 +1415,7 @@ def render_card(card, idx, total, meta, font_url):
     return ("""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><style>%s</style></head>
 <body><div class="card %s">
-<!--T2I_BOXES:%s-->
+%s
 %s
 %s
 %s

@@ -15,6 +15,77 @@
 
 ---
 
+## 🚀 快速开始
+
+### 1 · 装：把这句话发给你的 Agent
+
+**这是个 skill，不是命令行工具** —— 装它、用它都该让 Agent 兜底。下面这句直接复制给你在用的
+Agent（dsh / Claude Code / Codex / zcode / Cursor… 任何能联网 + 能执行命令的都行）：
+
+Windows（PowerShell）：
+
+```text
+帮我安装 text-to-infographic：irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
+```
+
+macOS / Linux / WSL：
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
+```
+
+> **为什么发给 Agent，而不是让用户自己去敲 cmd**：脚本要 clone 到
+> `~/.agents/skills/text-to-infographic`、探 Python、找 Chrome/Edge、按需补 `pyyaml`、
+> 最后跑一遍 `doctor.py` —— 中间任何一步缺东西（没装 Python、浏览器不在默认路径），
+> Agent 能当场判断并补上；更重要的是**装完 Agent 才知道该按 [SKILL.md](SKILL.md) 的五步流程走**，
+> 而不是只会在终端里跑命令。
+>
+> 两个平台脚本做的是同一件事：clone + 环境检查 + doctor。
+> 只想体检不写入：加 `-CheckOnly`（Windows）/ `--check-only`（macOS/Linux）。
+
+### 2 · 用：还是对 Agent 说一句
+
+装好之后不用记任何参数，直接把需求丢给它 —— 路径和文件名换成你自己的：
+
+```text
+用 text-to-infographic（~/.agents/skills/text-to-infographic）
+把 D:\notes\article.md 转成小红书图文，输出到桌面
+```
+
+Agent 按 [SKILL.md](SKILL.md) 走五步：读文章 → 写规格 → 过规格门 → 跑流水线 → 交图。
+产出是 `card-01.png …`，2160×2880（3:4 的 2 倍图）。
+
+**页数参考区间 6–9 张**（小红书配图规范：官方上限 18 张、推荐 6–9 张）—— 页数由"切法"决定，
+**不随文章行数增长**：张数 ≈ 1（封面）+ 章节数。228 行的文章是 7 张，1000 行的文章也是 8~10 张。
+
+| 文章规模 | 张数（含封面） | 怎么承载 |
+|---|---|---|
+| ≤1.5k 字 / 1~2 节 | 4–5 | 一页一个要点 |
+| 1.5k~3k 字 / 2~3 节 | 5–6 | 一页一个小节 |
+| 3k~6k 字 / 4~6 节 | 6–8 | 一页 1~2 个小节，坑合并成一页 `bullets` |
+| 6k~10k 字 / 6~10 节 | 8–12 | 一页一个主题（`meta.max_cards` 显式声明预算） |
+| >10k 字 / 10+ 节 | **拆成系列**，每篇 6–8 张 | 不要单篇塞到 18 张 |
+
+密度靠版式承载（一页 `bullets` 4~6 条 / `chain` 5~6 步 / `compare` 4+4 条），页数才压得住。
+`validate.py` 会按这个区间提示：超预算报软约束，超过平台上限 18 张报硬违规。
+
+### 3 · 给要改代码的人：自己敲
+
+```bash
+git clone https://github.com/Chendestiny/text-to-infographic
+cd text-to-infographic
+python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
+python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
+```
+
+- 规格是 **.json（零第三方依赖）** 或 .yaml（需 `pip install pyyaml`）；写法直接抄
+  [examples/](examples/) 里现成的（拿 `examples/agent-roadmap.json` 跑一遍就有成品）
+- 渲染需要任意 Chromium 系浏览器（Chrome / Edge / Chromium），自动探测
+- 字体已内置，不用另外装
+- Windows 上 `python` 不在 PATH 时改成 `py -3`
+
+---
+
 ## 🖼 出图效果
 
 一份长文进去，**9 张图**出来 —— 2160×2880（3:4 的 2 倍图），直接能发。挑 6 张，一行两张：
@@ -30,61 +101,7 @@
 
 ---
 
-##  快速开始
-
-### 1 · 安装
-
-**Windows（PowerShell）** —— 一行装到 `~/.agents/skills/text-to-infographic`：
-
-```powershell
-irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
-```
-
-**macOS / Linux：**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
-```
-
-脚本自己 clone、检查 Python、按需装 pyyaml、找 Chrome/Edge、验字体，最后跑一遍 `doctor.py`。
-加 `-CheckOnly`（Windows）/ `--check-only`（macOS/Linux）只体检不写入。
-
-**想改代码就手动 clone：**
-
-```bash
-git clone https://github.com/Chendestiny/text-to-infographic
-cd text-to-infographic
-python scripts/pipeline.py examples/agent-roadmap.json -o out/    # 先用示例规格跑一套
-```
-
-### 2 · 让 Agent 干活（推荐用法）
-
-装好之后不用记任何参数，直接把需求丢给 Agent —— 路径和文件名换成你自己的：
-
-```
-用 text-to-infographic（~/.agents/skills/text-to-infographic）
-把 D:\notes\article.md 转成小红书图文，输出到桌面
-```
-
-Agent 按 [SKILL.md](SKILL.md) 走五步：读文章 → 写规格 → 过规格门 → 跑流水线 → 交图。
-产出是 `card-01.png …`，2160×2880（3:4 的 2 倍图）；长文一般切 **6–9 页**，第一页是汇总封面。
-
-### 3 · 或者自己敲命令
-
-```bash
-python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
-python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
-```
-
-- 规格是 **.json（零第三方依赖）** 或 .yaml（需 `pip install pyyaml`）；写法直接抄
-  [examples/](examples/) 里现成的
-- 渲染需要任意 Chromium 系浏览器（Chrome / Edge / Chromium），自动探测
-- 字体已内置，不用另外装
-- Windows 上 `python` 不在 PATH 时改成 `py -3`
-
----
-
-## 🧭 怎么保证不出丑：两道门、三道检查
+##  怎么保证不出丑：两道门、三道检查
 
 每种版式的**每个文字槽位**都在 [templates/contracts.yaml](templates/contracts.yaml)
 里声明了字数预算，数值来自实际渲染好看的真实文案——不是拍脑袋。文案是在预算内写出来的，
@@ -94,15 +111,15 @@ python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → �
 |---|---|---|
 | **规格门** `validate.py` | 纯字符串计算，毫秒级，零 token | 文案超预算，报**精确路径**：`card-03(chain).steps[1].text  17.5 > max 15` |
 | **像素门** `measure.py` | 真实浏览器渲染，用 `getBBox()` 量**每个文本的真实包围盒** | 真实宽度溢出、画到画布外、压出方框、HTML 行撑破卡片底边 |
-| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字** |
+| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字**，以及被引擎截成「…」的断尾 |
 
 压不下的文案会进 `needs_llm` 清单，让模型拿到精确报错而不是「看起来坏了」。
-编排流还会自己校准宽度估算器、必要时注入 `textLength`，最多重跑 3 轮再求援。
+内容类问题不会再空跑几轮校准（脚本修不了），一轮就点名到具体哪一句。
 细节：[docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md)。
 
 ---
 
-##  版式（13 种）
+## 🧩 版式（13 种）
 
 | 版式 | 形态 | 适合 |
 |---|---|---|
@@ -179,15 +196,15 @@ scripts/vision_probe.py   一次性判定当前模型能不能真的读图
 templates/contracts.yaml  每种版式的字数预算（契约）
 examples/                 5 份完整规格（.json 与 .yaml 各一套）
 docs/                     手册：版式、契约、渲染、排障、扩展
-docs/images/showcase/     本 README 顶部那套真实跑批
-install.ps1 / install.sh  一句话安装脚本（clone + 环境检查 + doctor）
+docs/images/showcase/     本 README 里那套真实跑批
+install.ps1 / install.sh  一句话安装脚本（clone + 环境检查 + doctor），交给 Agent 执行
 ```
 
 ---
 
-## 🙏 致谢
+##  致谢
 
-- 顶部这套图是一次真实跑批的产物（示例文章名：《一张图看懂 Agent》）——
+- README 里那套图是一次真实跑批的产物（示例文章：《一张图看懂 Agent》）——
   内容与工具无关，只是拿来当一份四千字左右的真实测试样本。
 - 内置字体：**站酷快乐体（ZCOOL KuaiLe）**，仓库里唯一的第三方资源。
 

@@ -78,7 +78,7 @@ cards:
   subtitle: 把理论沉淀成[[实战能力]]
   steps:
   - {text: ① 基础扫盲, desc: AI 拆词 + B 站入门课}
-  - {text: ② 框架理论+实战, desc: LangChain / LangGraph / LlamaIndex}
+  - {text: ② 框架理论+实战, desc: LangChain 系框架}
   - {text: ③ 微调三平台, desc: LoRA / 私有化 / 云端一键}
   - {text: ④ 工程化闭环, desc: 架构 / 部署 / 运维}
   note: 四段走完，转型闭环

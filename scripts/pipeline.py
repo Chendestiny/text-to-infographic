@@ -97,6 +97,13 @@ def node_verify(state):
 
 def node_autofix(state):
     """确定性修正：校准因子放大 + 对溢出的 SVG 文本注入 textLength。"""
+    if not state["width_issues"]:
+        # ★ 只有内容/版式问题（missing-text / v-overflow）时，脚本没有任何可做的：
+        # 放大 calib 只会让 wrap_text 折得更早、截断更多，下一轮报得更多
+        # （实测踩过：内容门报 1 处 → calib 1.18 → 报 2 处 → calib 1.39 → 报 3 处）。
+        # 这类问题的唯一解是让人/Agent 改文案，所以直接返回，别污染宽度估算器。
+        state["log"].append("autofix: 只有内容/版式问题，脚本无法修正，跳过校准")
+        return
     state["calib"] = round(min(state["calib"] * 1.18, 2.0), 3)
     # 对仍溢出的文本直接注入 textLength（压回它所在的框/画布内）
     fixed = 0
@@ -165,6 +172,11 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
         node_verify(state)
         if not state["width_issues"] and not state["layout_issues"]:
             state["log"].append("verify: 干净，进入渲染")
+            break
+        if state["layout_issues"] and not state["width_issues"]:
+            # 内容被吞 / 版式撑破：再跑几轮结果一模一样，直接点名给 LLM 改文案
+            state["log"].append("verify: 内容或版式问题脚本修不了，直接交回 LLM 改文案")
+            state["needs_llm"] = [(p, i["text"]) for p, i in state["layout_issues"]]
             break
         if it == MAX_ITER:
             state["log"].append("verify: %d 轮后仍有溢出，标记给 LLM 重写文案"

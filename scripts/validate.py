@@ -25,6 +25,16 @@ CONTRACTS = os.path.join(ROOT, "templates", "contracts.yaml")
 
 HL_RE = re.compile(r"\[\[(.+?)(?:\|([a-z]{1,2}))?\]\]")
 
+# ---------------------------------------------------------------- 页数纪律
+# 这是**产品约束**，不是技术约束：渲染只要 0.5 秒/页，100 页也不会卡机器；
+# 真正的代价是 Agent 写文案 + 复核的时间，以及读者划不完的完读率。
+# 参考值来自小红书配图规范：官方上限 1–18 张，推荐 6–9 张。
+# 没有这道闸时 Agent 会一路"每个小节一页"切下去——实测一篇 228 行、5 章 9 个坑的文章
+# 被切成 11 张，按章节合并只要 7 张。
+PLATFORM_MAX = 18          # 平台硬上限：单篇超过 18 张发不出去
+SWEET_MIN, SWEET_MAX = 6, 9  # 推荐区间（封面 + 5~8 内容页）
+SERIES_HINT = 13           # 到这儿就该拆成系列，而不是继续加页
+
 
 def eff_len(text):
     """有效字数：汉字 1 + 其他 0.5；高亮标记剥离后计。"""
@@ -98,6 +108,21 @@ def validate(spec, layouts):
     """layouts = templates/contracts.yaml 里的 layouts 字典。返回 (errors, warnings)。"""
     issues, warnings = [], []
     cards = spec.get("cards") or []
+    n = len(cards)
+    # 作者可以在 meta.max_cards 里显式声明这次的预算（长文/教程类），但仍受平台上限约束
+    budget = int(((spec.get("meta") or {}).get("max_cards")) or SWEET_MAX)
+    budget = min(budget, PLATFORM_MAX)
+    if n > PLATFORM_MAX:
+        issues.append(("cards", "共 %d 页 > 平台上限 %d：小红书单篇最多 18 张图，多出来的发不出去"
+                                "（改法：合并相邻小节，或拆成系列每篇 6~9 张）" % (n, PLATFORM_MAX), ""))
+    elif n > budget:
+        tail = ("；已经到 %d 张以上，建议拆成系列（每篇 6~9 张），而不是继续加页" % SERIES_HINT
+                if n >= SERIES_HINT else
+                "；先合并相邻小节，靠版式承载密度（bullets 4~6 条 / chain 5~6 步）")
+        warnings.append(("cards", "共 %d 页 > 预算 %d（推荐 %d~%d）%s"
+                                  % (n, budget, SWEET_MIN, SWEET_MAX, tail), ""))
+    elif n < 4:
+        warnings.append(("cards", "共 %d 页偏少：要么切太粗，要么文章本来就短" % n, ""))
     for i, card in enumerate(cards):
         layout = card.get("layout")
         if layout not in layouts:
@@ -121,9 +146,16 @@ def main():
     spec = yaml.safe_load(io.open(args.spec, encoding="utf-8").read())
     contracts = yaml.safe_load(io.open(args.contracts, encoding="utf-8").read())
     errors, warns = validate(spec, contracts.get("layouts") or {})
-    if warns:
-        print("软约束（会自动换行/缩字，建议改短）%d 处：" % len(warns))
-        for path, msg, sample in warns:
+    # 页数提示和"文案太长"是两类问题，混在一个标题下会误导 Agent
+    page_warns = [w for w in warns if w[0] == "cards"]
+    text_warns = [w for w in warns if w[0] != "cards"]
+    if page_warns:
+        print("页数提示（%d 处）：" % len(page_warns))
+        for path, msg, sample in page_warns:
+            print("  %-42s %s" % (path, msg))
+    if text_warns:
+        print("软约束（会自动换行/缩字，建议改短）%d 处：" % len(text_warns))
+        for path, msg, sample in text_warns:
             print("  %-42s %s  %s" % (path, msg, sample))
     if errors:
         print("\n契约违规（硬约束，必然溢出）%d 处：" % len(errors))
@@ -131,7 +163,10 @@ def main():
             print("  %-42s %s  %s" % (path, msg, sample))
         return 1
     if not warns:
-        print("契约校验通过（0 硬 / 0 软）。")
+        n = len(spec.get("cards") or [])
+        zone = ("在推荐区间 %d~%d 内" % (SWEET_MIN, SWEET_MAX)
+                if SWEET_MIN <= n <= SWEET_MAX else "（%d 张）" % n)
+        print("契约校验通过（%d 页，%s，0 硬 / 0 软）。" % (n, zone))
     return 0
 
 
