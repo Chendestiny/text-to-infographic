@@ -1,0 +1,317 @@
+layouts:
+  arch:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    host_label:
+      max: 10
+    link_label:
+      max: 6
+    server:
+      max: 8
+    server_desc:
+      max: 10
+    line:
+      max: 16
+    note:
+      max: 44
+      soft: true
+    inner:
+      count:
+        min: 1
+        max: 2
+      fields:
+        text:
+          max: 6
+        desc:
+          max: 8
+    chips:
+      count:
+        min: 2
+        max: 4
+      fields:
+        text:
+          max: 6
+        desc:
+          max: 6
+  bullets:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    items:
+      count:
+        min: 2
+        max: 6
+      fields:
+        head:
+          max: 12
+        desc:
+          max: 34
+          soft: true
+  chain:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    note:
+      max: 44
+      soft: true
+    dashed_label:
+      max: 12
+    steps:
+      count:
+        min: 3
+        max: 6
+      fields:
+        text:
+          min: 5
+          max: 15
+  compare:
+    title:
+      min: 3
+      max: 16
+    subtitle:
+      max: 22
+    left:
+      label:
+        max: 10
+      note:
+        max: 44
+        soft: true
+      blocks:
+        count:
+          min: 2
+          max: 5
+        fields:
+          text:
+            max: 12
+    right:
+      label:
+        max: 10
+      note:
+        max: 44
+        soft: true
+      blocks:
+        count:
+          min: 2
+          max: 5
+        fields:
+          text:
+            max: 12
+  cover:
+    title:
+      min: 4
+      max: 30
+      lines: 2
+    subtitle:
+      max: 22
+    note:
+      max: 44
+      soft: true
+    quads:
+      count:
+        min: 2
+        max: 4
+      fields:
+        label:
+          max: 10
+        mini:
+          max: 8
+        items:
+          count:
+            min: 1
+            max: 4
+          fields:
+            text:
+              max: 12
+            desc:
+              max: 12
+              soft: true
+        line:
+          max: 14
+        chips:
+          count:
+            min: 2
+            max: 4
+          fields:
+            each:
+              max: 6
+  cycle:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    keywords:
+      count:
+        min: 3
+        max: 4
+      fields:
+        each:
+          max: 8
+    nodes:
+      count:
+        min: 3
+        max: 6
+      fields:
+        text:
+          max: 8
+        desc:
+          max: 22
+          soft: true
+  flow:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    mid:
+      max: 14
+    note:
+      max: 44
+      soft: true
+    note2:
+      max: 44
+      soft: true
+    dashed_label:
+      max: 12
+    nodes:
+      count:
+        min: 3
+        max: 5
+      fields:
+        text:
+          max: 7
+        desc:
+          max: 18
+          soft: true
+    bottom:
+      count:
+        min: 2
+        max: 4
+      fields:
+        text:
+          max: 6
+        desc:
+          max: 16
+          soft: true
+  hub:
+    title:
+      min: 4
+      max: 14
+      lines: 2
+    subtitle:
+      min: 6
+      max: 20
+    hub:
+      max: 6
+    note:
+      max: 44
+      soft: true
+    items:
+      count:
+        min: 2
+        max: 6
+      fields:
+        big:
+          max: 6
+        en:
+          max: 18
+        tag:
+          max: 6
+  matrix:
+    title:
+      min: 3
+      max: 16
+    subtitle:
+      max: 22
+    note:
+      max: 44
+      soft: true
+    labels:
+      top:
+        max: 10
+      left:
+        max: 10
+    cells:
+      count: 4
+      fields:
+        head:
+          max: 8
+        desc:
+          max: 32
+          soft: true
+  pyramid:
+    title:
+      min: 3
+      max: 16
+    subtitle:
+      max: 22
+    note:
+      max: 44
+      soft: true
+    levels:
+      count:
+        min: 2
+        max: 6
+      fields:
+        text:
+          max: 10
+        desc:
+          max: 14
+          soft: true
+  spectrum:
+    title:
+      min: 3
+      max: 26
+      lines: 2
+    subtitle:
+      max: 22
+    stages:
+      count:
+        min: 2
+        max: 4
+      fields:
+        each:
+          max: 7
+    ends:
+      count: 2
+      fields:
+        each:
+          max: 9
+    items:
+      count:
+        min: 3
+        max: 5
+      fields:
+        text:
+          min: 6
+          max: 16
+    note:
+      max: 44
+      soft: true
+  timeline:
+    title:
+      min: 3
+      max: 14
+    subtitle:
+      max: 22
+    note:
+      max: 44
+      soft: true
+    steps:
+      count:
+        min: 3
+        max: 6
+      fields:
+        text:
+          min: 3
+          max: 10
+        desc:
+          max: 30
+          soft: true

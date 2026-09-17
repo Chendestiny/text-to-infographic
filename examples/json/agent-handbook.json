@@ -1,0 +1,213 @@
+{
+  "meta": {
+    "footer": "",
+    "frame": [
+      "pen",
+      "pen",
+      "none",
+      "pen",
+      "pen",
+      "none",
+      "pen"
+    ],
+    "decor": true
+  },
+  "cards": [
+    {
+      "layout": "hub",
+      "title": "Agent 的手和脚",
+      "subtitle": "工具 · MCP 与 Skills",
+      "hub": "Agent",
+      "note": "一篇讲清 Agent 的手脚三件套",
+      "items": [
+        {
+          "big": "手",
+          "en": "Function Calling",
+          "tag": "能调",
+          "color": "blue"
+        },
+        {
+          "big": "脚",
+          "en": "MCP",
+          "tag": "能接",
+          "color": "yellow"
+        },
+        {
+          "big": "技能",
+          "en": "Agent Skills",
+          "tag": "会挑着递",
+          "color": "pink"
+        }
+      ]
+    },
+    {
+      "layout": "chain",
+      "title": "Function Calling",
+      "subtitle": "[[tool_call]] 是模型吐的，干活的是代码",
+      "steps": [
+        {
+          "text": "① 注入 [[tools 定义]]"
+        },
+        {
+          "text": "② [[用户提问]]"
+        },
+        {
+          "text": "③ 模型返回 tool_calls",
+          "fill": "yellow"
+        },
+        {
+          "text": "④ 你的代码执行",
+          "fill": "blue"
+        },
+        {
+          "text": "⑤ 结果 [[塞回历史]]"
+        }
+      ],
+      "note": "回到 ② 步，直到模型不再调工具"
+    },
+    {
+      "layout": "chain",
+      "title": "一个最小例子",
+      "subtitle": "一条 loop：[[先要工具，再想，最后才说人话]]",
+      "steps": [
+        {
+          "text": "用户：[[北京]]今天适合跑步吗"
+        },
+        {
+          "text": "模型：这得查天气",
+          "fill": "yellow"
+        },
+        {
+          "text": "代码执行 [[getWeather]]",
+          "fill": "blue"
+        },
+        {
+          "text": "返回：[[晴 26℃]]"
+        },
+        {
+          "text": "模型：[[适合，去跑吧]]"
+        }
+      ],
+      "note": "问 → 调 → 回 → 再问"
+    },
+    {
+      "layout": "bullets",
+      "title": "新手常踩的 4 个坑",
+      "subtitle": "踩过才知道 —— [[第 3 条最容易翻车]]",
+      "items": [
+        {
+          "false": "①",
+          "head": "tool_choice 用哪个？",
+          "desc": "默认 [[auto]]，要强制再点名。"
+        },
+        {
+          "false": "②",
+          "head": "schema 别写松",
+          "desc": "否则传回非法值，下游直接炸。"
+        },
+        {
+          "false": "③",
+          "head": "最阴：幻觉工具名",
+          "desc": "先 [[白名单校验]]，不认识就扔。"
+        },
+        {
+          "false": "④",
+          "head": "返回值可能巨长",
+          "desc": "该截断截断，该摘要摘要。"
+        }
+      ]
+    },
+    {
+      "layout": "arch",
+      "title": "脚：MCP",
+      "subtitle": "[[Model Context Protocol]]",
+      "host_label": "Host 跑 Agent",
+      "inner": [
+        {
+          "text": "Client",
+          "desc": "一对一握手",
+          "fill": "yellow"
+        },
+        {
+          "text": "Client",
+          "desc": "另一个 Server"
+        }
+      ],
+      "link_label": "标准协议",
+      "server": "Server",
+      "server_desc": "暴露工具 / 资源",
+      "server_fill": "pink",
+      "line": "给工具调用定标准，像 [[USB-C]]：插哪都行",
+      "chips": [
+        {
+          "text": "Host",
+          "desc": "跑 Agent"
+        },
+        {
+          "text": "Client",
+          "desc": "负责握手"
+        },
+        {
+          "text": "Server",
+          "desc": "暴露工具"
+        }
+      ],
+      "note": "记这三个角色就够了"
+    },
+    {
+      "layout": "flow",
+      "title": "FC 与 MCP 什么关系",
+      "subtitle": "[[MCP 不替代 Function Calling]]",
+      "mid": "MCP：首尾那套传输",
+      "nodes": [
+        {
+          "text": "工具清单"
+        },
+        {
+          "text": "FC 定义",
+          "fill": "blue"
+        },
+        {
+          "text": "tool_call",
+          "fill": "yellow"
+        },
+        {
+          "text": "tools/call"
+        }
+      ],
+      "note": "上下游接力，不是二选一",
+      "note2": "FC 在模型侧，MCP 在应用侧"
+    },
+    {
+      "layout": "compare",
+      "title": "能力怎么按需加载",
+      "subtitle": "Skill 是能力包，[[Agent Skills 是加载机制]]",
+      "left": {
+        "label": "反例：[[全量加载]]",
+        "blocks": [
+          "全部内容",
+          "全部内容",
+          "全部内容",
+          "全部内容",
+          "全部内容"
+        ],
+        "note": "爆 token + 添噪声"
+      },
+      "right": {
+        "label": "正解：[[渐进加载]]",
+        "blocks": [
+          {
+            "text": "轻量索引",
+            "fill": "yellow"
+          },
+          {
+            "text": "命中的 Skill",
+            "fill": "blue"
+          },
+          "没命中：不动"
+        ],
+        "note": "不相关的永不进上下文"
+      }
+    }
+  ]
+}

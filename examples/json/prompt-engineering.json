@@ -1,0 +1,217 @@
+{
+  "meta": {
+    "footer": "",
+    "frame": [
+      "card",
+      "none",
+      "pen",
+      "pen",
+      "none",
+      "pen",
+      "pen",
+      "none",
+      "pen"
+    ],
+    "decor": true
+  },
+  "cards": [
+    {
+      "layout": "hub",
+      "title": "提示词工程",
+      "subtitle": "把任务交代清楚的[[成本最低的杠杆]]",
+      "hub": "Prompt",
+      "note": "不改模型、不训数据，把话说对",
+      "items": [
+        {
+          "big": "约束写死",
+          "en": "Rules",
+          "tag": "正向写",
+          "color": "blue"
+        },
+        {
+          "big": "示例给足",
+          "en": "Few-shot",
+          "tag": "真实注入",
+          "color": "yellow"
+        },
+        {
+          "big": "Schema",
+          "en": "Structured Output",
+          "tag": "程序接得住",
+          "color": "pink"
+        }
+      ]
+    },
+    {
+      "layout": "bullets",
+      "title": "提示词的本质：造环境",
+      "subtitle": "模型是[[聪明但不了解你公司的新同事]]",
+      "items": [
+        {
+          "false": "①",
+          "head": "分区：像入职手册分章节",
+          "desc": "角色 / 状态 / 规则 / 完成条件 / 输出格式。"
+        },
+        {
+          "false": "②",
+          "head": "定位问题变快",
+          "desc": "能直接说「规则区第几条没起作用」。"
+        },
+        {
+          "false": "③",
+          "head": "稳定放前面，多变往后拼",
+          "desc": "system 写死，字段表和示例往后拼。"
+        }
+      ]
+    },
+    {
+      "layout": "compare",
+      "title": "别写「不要XX」",
+      "subtitle": "改成[[正向指令]]，遵从率明显更高",
+      "left": {
+        "label": "失效写法",
+        "blocks": [
+          "不要输出多余字段",
+          "不要重复点同一个按钮",
+          "不要编造出处"
+        ],
+        "note": "负向清单永远列不全"
+      },
+      "right": {
+        "label": "改成正向",
+        "blocks": [
+          {
+            "text": "只输出 schema 中的字段",
+            "fill": "yellow"
+          },
+          "同一动作最多 3 次",
+          {
+            "text": "结论必须附来源字段",
+            "fill": "blue"
+          }
+        ],
+        "note": "「不要」只留给绝对红线"
+      }
+    },
+    {
+      "layout": "compare",
+      "title": "思维链 CoT",
+      "subtitle": "先写步骤再答题，[[白捡的提升]]",
+      "left": {
+        "label": "直接问",
+        "blocks": [
+          "甩出问题",
+          "凭直觉一步出答案",
+          "跳步 / 漏条件"
+        ],
+        "note": "错了不知道错在哪一步"
+      },
+      "right": {
+        "label": "先想再答",
+        "blocks": [
+          {
+            "text": "先写推理过程",
+            "fill": "blue"
+          },
+          {
+            "text": "逐条件核对",
+            "fill": "yellow"
+          },
+          "结论跟着步骤走"
+        ],
+        "note": "GSM8K 提升约 300%"
+      }
+    },
+    {
+      "layout": "bullets",
+      "title": "CoT 的边界",
+      "subtitle": "[[多步骤任务才开]]，别迷信",
+      "items": [
+        {
+          "false": "①",
+          "head": "小模型玩不转",
+          "desc": "20B 以下加 CoT 基本无效，还容易幻觉。"
+        },
+        {
+          "false": "②",
+          "head": "算术照样翻车",
+          "desc": "步骤全对，6×13 算成 68 —— 精确计算交给代码。"
+        },
+        {
+          "false": "③",
+          "head": "更贵更慢",
+          "desc": "输出更长，token 就是钱。"
+        }
+      ]
+    },
+    {
+      "layout": "chain",
+      "title": "Few-shot 从哪来",
+      "subtitle": "[[从真实数据检索注入]]，不手写",
+      "steps": [
+        {
+          "text": "历史库 494 条真实规则",
+          "fill": "yellow"
+        },
+        {
+          "text": "去重 → 88 条向量化入库"
+        },
+        {
+          "text": "新规则语义检索 top_k=2",
+          "fill": "blue"
+        },
+        {
+          "text": "连输入带期望输出注入提示词"
+        }
+      ],
+      "note": "检索失败就一条都不给，不回退手写兜底"
+    },
+    {
+      "layout": "chain",
+      "title": "结构化输出三级阶梯",
+      "subtitle": "让程序[[接得住]]它的回答",
+      "steps": [
+        {
+          "text": "① 提示词约定：只输出 JSON",
+          "fill": "yellow"
+        },
+        {
+          "text": "② 工具调用 FC：schema 天然约束",
+          "fill": "blue"
+        },
+        {
+          "text": "③ API 强制：guided_json",
+          "fill": "pink"
+        },
+        {
+          "text": "语法层模型管，[[语义层代码管]]"
+        }
+      ],
+      "note": "字段白名单 / 操作符 / 数值合理性，Python 硬校验"
+    },
+    {
+      "layout": "flow",
+      "title": "保命两件事",
+      "subtitle": "比任何写作技巧[[都值钱]]",
+      "nodes": [
+        {
+          "text": "版本管理",
+          "desc": "配置化 + 热加载"
+        },
+        {
+          "text": "版本号进 trace",
+          "fill": "yellow"
+        },
+        {
+          "text": "固定问题集",
+          "desc": "20 个典型用例"
+        },
+        {
+          "text": "回归对比",
+          "fill": "blue"
+        }
+      ],
+      "note": "没有回归，改提示词就是蒙眼开盲盒"
+    }
+  ]
+}
