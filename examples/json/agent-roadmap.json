@@ -1,0 +1,300 @@
+{
+  "meta": {
+    "footer": "",
+    "frame": [
+      "card",
+      "pen",
+      "none",
+      "pen",
+      "pen",
+      "none",
+      "pen",
+      "none",
+      "pen"
+    ],
+    "decor": true
+  },
+  "cards": [
+    {
+      "layout": "cover",
+      "title": "前端转 AI Agent\n学习路线",
+      "subtitle": "6 年前端视角的转型路线图",
+      "note": "两条理由：打不过就加入 + 前同事验证过门槛",
+      "quads": [
+        {
+          "label": "理论三大板块",
+          "mini": "list",
+          "items": [
+            {
+              "text": "Agent 全流程开发"
+            },
+            {
+              "text": "模型调用与微调"
+            },
+            {
+              "text": "工程化落地运维"
+            }
+          ]
+        },
+        {
+          "label": "落地四阶段",
+          "mini": "steps",
+          "items": [
+            {
+              "text": "扫盲"
+            },
+            {
+              "text": "框架实战"
+            },
+            {
+              "text": "微调"
+            },
+            {
+              "text": "工程化"
+            }
+          ]
+        },
+        {
+          "label": "框架怎么学",
+          "mini": "list",
+          "items": [
+            {
+              "text": "LangChain 打底"
+            },
+            {
+              "text": "LangGraph 进阶"
+            },
+            {
+              "text": "LlamaIndex 选修"
+            }
+          ]
+        },
+        {
+          "label": "项目与微调",
+          "mini": "boxes",
+          "items": [
+            {
+              "text": "入门项目"
+            },
+            {
+              "text": "面试架构"
+            },
+            {
+              "text": "微调平台"
+            }
+          ],
+          "line": "练手 + 面试两用"
+        }
+      ]
+    },
+    {
+      "layout": "compare",
+      "title": "为什么转型",
+      "subtitle": "[[现实压力]] + [[身边案例]]",
+      "left": {
+        "label": "现实压力",
+        "blocks": [
+          "Claude Code 替代效应明显",
+          "岗位收缩、内卷加剧",
+          {
+            "text": "打不过就加入",
+            "fill": "yellow"
+          }
+        ],
+        "note": "要么顶尖专家，要么拓宽边界"
+      },
+      "right": {
+        "label": "身边案例",
+        "blocks": [
+          "前同事成功转型",
+          "TS/JS 功底可复用",
+          {
+            "text": "门槛没那么高",
+            "fill": "blue"
+          }
+        ],
+        "note": "实地调研后正式启动"
+      }
+    },
+    {
+      "layout": "chain",
+      "title": "理论体系三大板块",
+      "subtitle": "入门必须啃下来的[[基础]]",
+      "steps": [
+        {
+          "text": "[[Agent 全流程开发]]",
+          "fill": "yellow"
+        },
+        {
+          "text": "[[模型轻量调用与微调]]",
+          "fill": "blue"
+        },
+        {
+          "text": "[[工程化落地与运维]]",
+          "fill": "pink"
+        }
+      ],
+      "note": "三块互相关联，学习侧重完全不同"
+    },
+    {
+      "layout": "flow",
+      "title": "Agent 全流程开发",
+      "subtitle": "核心主干，[[细分五块]]",
+      "nodes": [
+        {
+          "text": "基础认知"
+        },
+        {
+          "text": "提示词工程"
+        },
+        {
+          "text": "工具调用",
+          "fill": "yellow"
+        },
+        {
+          "text": "RAG"
+        },
+        {
+          "text": "工程化"
+        }
+      ],
+      "note": "工具调用涵盖 FC / Tools Calling / MCP",
+      "note2": "高阶：循环死锁 / 重试 / 流式 / 人在回路"
+    },
+    {
+      "layout": "timeline",
+      "title": "落地学习路线：四个阶段",
+      "subtitle": "把理论沉淀成[[实战能力]]",
+      "steps": [
+        {
+          "text": "① 基础扫盲",
+          "desc": "AI 拆词 + B 站入门课"
+        },
+        {
+          "text": "② 框架理论+实战",
+          "desc": "LangChain 系框架"
+        },
+        {
+          "text": "③ 微调三平台",
+          "desc": "LoRA / 私有化 / 云端一键"
+        },
+        {
+          "text": "④ 工程化闭环",
+          "desc": "架构 / 部署 / 运维"
+        }
+      ],
+      "note": "四段走完，转型闭环"
+    },
+    {
+      "layout": "bullets",
+      "title": "框架怎么学",
+      "subtitle": "核心是 [[LangChain]]，进阶 [[LangGraph]]",
+      "items": [
+        {
+          "false": "①",
+          "head": "直啃官方 TS 版文档",
+          "desc": "汇总给 AI，[[严格按官网 Demo]] 整理成笔记。"
+        },
+        {
+          "false": "②",
+          "head": "低成本付费课程",
+          "desc": "闲鱼等渠道入手，性价比极高。"
+        },
+        {
+          "false": "③",
+          "head": "LlamaIndex 选修",
+          "desc": "RAG 场景的专属框架。"
+        }
+      ]
+    },
+    {
+      "layout": "matrix",
+      "title": "微调三条路径",
+      "subtitle": "[[按需求选]]，各有优劣",
+      "labels": {
+        "top": "国内 ←→ 国外"
+      },
+      "cells": [
+        {
+          "head": "魔搭社区",
+          "desc": "免费算力，国内首选"
+        },
+        {
+          "head": "云平台",
+          "desc": "低代码一键微调，付费"
+        },
+        {
+          "head": "Hugging Face",
+          "desc": "模型最多，访问不稳"
+        },
+        {
+          "head": "自托管",
+          "desc": "LoRA / QLoRA 私有化"
+        }
+      ]
+    },
+    {
+      "layout": "compare",
+      "title": "GitHub 项目怎么选",
+      "subtitle": "[[练手]] 和 [[面试储备]] 分两类",
+      "left": {
+        "label": "入门练手",
+        "blocks": [
+          "Hello Agent",
+          "智谱 GLM Chat",
+          "Langchain Agent"
+        ],
+        "note": "快速跑通完整开发流程"
+      },
+      "right": {
+        "label": "面试高频架构",
+        "blocks": [
+          {
+            "text": "Claude Code",
+            "fill": "yellow"
+          },
+          "OpenClaw（小龙虾）",
+          "Hermes Agent"
+        ],
+        "note": "行业顶流，借鉴架构"
+      }
+    },
+    {
+      "layout": "bullets",
+      "title": "路线总结",
+      "subtitle": "六步走完，[[转型闭环]]",
+      "items": [
+        {
+          "false": "①",
+          "head": "扫盲概念",
+          "desc": "AI 工具 + B 站免费课。"
+        },
+        {
+          "false": "②",
+          "head": "LangChain TS 版",
+          "desc": "官网 Demo 整理成笔记。"
+        },
+        {
+          "false": "③",
+          "head": "进阶 LangGraph",
+          "desc": "多智能体编排 + LlamaIndex。"
+        },
+        {
+          "false": "④",
+          "head": "GitHub 项目",
+          "desc": "入门 3 个 + 面试 3 个。"
+        },
+        {
+          "false": "⑤",
+          "head": "微调上魔搭",
+          "desc": "免费算力练 LoRA。"
+        },
+        {
+          "false": "⑥",
+          "head": "工程化补齐",
+          "desc": "架构 / 部署 / 运维闭环。"
+        }
+      ]
+    }
+  ]
+}

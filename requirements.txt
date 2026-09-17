@@ -1,0 +1,2 @@
+# 只有读 .yaml 规格才需要 pyyaml；把规格写成 .json 可以完全不装依赖。
+pyyaml>=6.0

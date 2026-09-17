@@ -1,0 +1,31 @@
+# 构建产物
+build/
+out/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 渲染时的临时 profile / 缓存
+.prof-*
+.ds*
+t2i-prof-*
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 本地调试备份 / 中间产物
+*.bak
+*.bak2
+gallery-build/
+gallery-out/
+docs/_local/
+
+# 每次任务的输入规格（Agent 产出、用户会改，属工作产物不是分发内容）
+# 要分享的规格请放进 examples/
+spec/
