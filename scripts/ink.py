@@ -51,6 +51,9 @@ SIZES = {"h1": 88, "sub": 42, "body": 52, "note": 38}
 CALIB = [1.0]
 # 当前卡片的方框清单（pen_box 注册），build 时埋进 HTML 供 measure 比对
 _BOXES = []
+# 本卡登记的文字（净文本）。measure 的内容门会核对「规格里写的字是否真的出现在图上」——
+# 见 _reg_text 的注释：文字被静默吞掉时，几何检查永远发现不了。
+_TEXTS = []
 
 WARN = []
 
@@ -274,6 +277,7 @@ def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
         # 字体度量估不准时，直接用 SVG 的 textLength 强制占满指定宽度。
         # lengthAdjust=spacingAndGlyphs 会等比压缩字距和字形，绝不出界。
         a += " textLength='%.1f' lengthAdjust='spacingAndGlyphs'" % textlength
+    _reg_text(s)
     return ("<text x='%s' y='%s' text-anchor='%s' font-size='%s' fill='%s'%s "
             "letter-spacing='-1.6'>%s</text>"
             % (x, y, anchor, size, fill, a, esc(s.replace(" ", "\u00a0"))))
@@ -378,6 +382,18 @@ def strip_hl(text):
     return HL_RE.sub(lambda m: m.group(1), text)
 
 
+def _reg_text(s):
+    """登记一段将写进输出的净文本，供内容门核对。
+
+    为什么需要这道门：文字被静默吞掉时（例如 _inline 漏掉了最后一个 [[高亮]] 之后的
+    尾巴，甚至整条副标题变空），**所有几何检查都发现不了** —— 图上根本没有那行字，
+    自然也不会溢出、不会压框。这是唯一能抓住「规格写了、图上没有」的门。
+    """
+    t = re.sub(r"\s+", "", strip_hl(str(s or "")))
+    if t:
+        _TEXTS.append(t)
+
+
 def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
             maxw=None):
     """一行居中文本，可给任意片段涂蜡笔底色。
@@ -419,6 +435,8 @@ def h1_html(title):
         size = max(54, int(size * W_INNER / est))
     style = "" if size == SIZES["h1"] else " style='font-size:%dpx'" % size
     body = esc(title).replace("\n", "<br>")
+    # 显式换行的 \n 会被 _reg_text 规范化掉，图上 <br> 也不产生文本，两边一致
+    _reg_text(title)
     return "<h1%s>%s</h1>" % (style, body)
 
 
@@ -438,16 +456,20 @@ def _sub(sub):
 
 
 def header_height(card):
-    """页头（标题 + 副标题 + stage 间距）占掉多少高度——HTML 版式算预算要用。
+    """页头（标题 + 副标题 + stage 间距）占掉多少高度——要按真实可用高度算预算的版式用。
 
     踩过的坑：bullets 原来写死 `avail_rows = 960`，但真实可用高度会随标题行数变化
     （标题多一行就少 ~100px），于是 5 条的两行标题页会超出 12px 被门拦下。
     这里按渲染时的同一套几何推导，和 CSS 保持同源。
+
+    另一处坑：显式写 `\\n` 的标题要按**最长的一行**算字号（h1_html 就是这么做的），
+    按整条标题估会算小字号 → 页头高度算矮 → 版式又顶破卡片底部。
     """
     title = card.get("title", "") or ""
     lines = title.count("\n") + 1
     size = SIZES["h1"]
-    est = tw(title.replace("\n", ""), size) * 1.06
+    widest = max(title.split("\n"), key=lambda t: tw(t, size)) if "\n" in title else title
+    est = tw(widest, size) * 1.06
     if est > W_INNER:
         size = max(54, int(size * W_INNER / est))
         if lines == 1 and " " in title:
@@ -675,9 +697,18 @@ def layout_cover(card, seed):
     bw = W_INNER - 2 * bx
     g = 22
     note_h = 54 if card.get("note") else 0
-    avail = 944 - (54 if not card.get("note") else 0)   # 实测可用高度
+    # 四宫格的高度**必须按真实页头算**。原来写死 890/944：标题一折成两行（或副标题长一点），
+    # stage 就顶破卡片底部，而 .card 是 overflow:hidden —— 底部被静默裁掉，
+    # measure（只量横向溢出）和肉眼都容易漏。这里改成按真实预算算高度。
+    budget = H_CARD - 2 * PAD_TOP - header_height(card)
+    grid_h = int(min(890, budget - note_h))
+    if grid_h < 560:
+        WARN.append("[cover] 可用高度只剩 %dpx：标题/副标题太长，四宫格会被压扁；"
+                    "建议精简标题，或改用 hub 版式" % grid_h)
+        grid_h = 560
+    stage_h = grid_h + note_h
     tw_ = (bw - g) // 2
-    th_ = (avail - note_h - g) // 2
+    th_ = (grid_h - g) // 2
     parts = [defs("a0")]
     for i, q in enumerate(quads):
         x = bx + (i % 2) * (tw_ + g)
@@ -698,12 +729,12 @@ def layout_cover(card, seed):
         parts.append(fn(x + 22, y + 84, tw_ - 44, th_ - 108,
                         q.get("items") or [], pal, i * 23 + 7, q))
     if card.get("note"):
-        parts.append(txt_block(W_INNER / 2, avail + note_h - 24, strip_hl(card["note"]),
+        parts.append(txt_block(W_INNER / 2, grid_h + note_h - 24, strip_hl(card["note"]),
                                SIZES["note"], W_INNER, max_lines=1, tag="cover-note"))
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
             "xmlns='http://www.w3.org/2000/svg'>%s"
-            % (W_INNER, avail + note_h, W_INNER, avail + note_h, "".join(parts)))
+            % (W_INNER, stage_h, W_INNER, stage_h, "".join(parts)))
 
 
 def layout_chain(card, seed):
@@ -973,6 +1004,11 @@ def layout_bullets(card, seed):
     for it in items:
         fill = PAL.get(it.get("fill")) or pal.next()
         plain = bool(fill)      # 行已上色，行内不再画色带
+        if plain:
+            # 这一支用 esc 直接拼 HTML，绕过了 _inline → 要手动登记，
+            # 否则内容门对「已上色行」的文字失明
+            _reg_text(it.get("head", ""))
+            _reg_text(it.get("desc", ""))
         head = _inline(it.get("head", "")) if not plain else esc(strip_hl(it.get("head", "")))
         desc = _inline(it.get("desc", "")) if not plain else esc(strip_hl(it.get("desc", "")))
         no = "<span class='no'>%s</span>" % esc(it["no"]) if it.get("no") else ""
@@ -990,6 +1026,7 @@ def _inline(text):
     """HTML 内联高亮（显式指定的颜色才生效）。"""
     if not text:
         return ""
+    _reg_text(text)
     out, pos = [], 0
     for m in HL_RE.finditer(text):
         out.append(esc(text[pos:m.start()]))
@@ -1117,6 +1154,7 @@ def layout_matrix(card, seed):
     if lab.get("top"):
         parts.append(txt(bx + bw / 2, 112, strip_hl(lab["top"]), 34, fill=C_NOTE))
     if lab.get("left"):
+        _reg_text(lab["left"])
         parts.append("<text x='%d' y='%d' font-family='Microsoft YaHei' font-size='30' "
                      "fill='%s' transform='rotate(-90 %d %d)'>%s</text>"
                      % (bx - 34, top + bh / 2, C_NOTE, bx - 34, top + bh / 2,
@@ -1331,11 +1369,15 @@ def render_card(card, idx, total, meta, font_url):
     kind = card.get("frame") or frames[idx % len(frames)]
 
     _BOXES.clear()
+    _TEXTS.clear()
     body = LAYOUTS[layout](card, idx * 17 + 7)
-    manifest = "<!--T2I_BOXES:%s-->" % json.dumps(_BOXES)
     sub = _sub(card.get("subtitle", ""))
+    h1 = h1_html(card.get("title", ""))
     foot = meta.get("footer", "")
-    foot_html = "<div class='foot'>%s</div>" % esc(foot) if foot else ""
+    foot_html = ""
+    if foot:
+        _reg_text(foot)
+        foot_html = "<div class='foot'>%s</div>" % esc(foot)
     cls = {"pen": "square", "card": "round", "none": "plain"}.get(kind, "square")
     # 四宫格封面已经铺满画面，装饰会压到格子边框 → 这一种版式自动不加装饰
     full_bleed = layout == "cover" and card.get("quads")
@@ -1356,6 +1398,11 @@ def render_card(card, idx, total, meta, font_url):
     for k, v in repl:
         css = css.replace(k, v)
 
+    # ★ manifest 必须最后算：上面每个渲染函数都会 _reg_text 登记文字，
+    # 早算一步就漏掉后发生的那批（踩过：算在 _sub 之前 → 副标题没进清单，
+    # 于是内容门对副标题完全失明）。
+    manifest = "<!--T2I_BOXES:%s--><!--T2I_TEXTS:%s-->" % (
+        json.dumps(_BOXES), json.dumps(_TEXTS, ensure_ascii=False))
     return ("""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><style>%s</style></head>
 <body><div class="card %s">
@@ -1367,5 +1414,4 @@ def render_card(card, idx, total, meta, font_url):
 %s
 %s
 </div></body></html>""" % (css, cls, manifest, frame_overlay(kind, 4200 + idx),
-                           deco, h1_html(card.get("title", "")), sub, body,
-                           foot_html))
+                           deco, h1, sub, body, foot_html))

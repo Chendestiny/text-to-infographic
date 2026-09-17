@@ -58,7 +58,10 @@ not guessed.
    with a precise error instead of "it looks broken"
 
 Two gates, both deterministic: the spec gate is cheap and catches most issues; the pixel gate is
-expensive and catches the rest. The LLM is never asked to "make it look right".
+expensive and catches the rest. The pixel gate also carries a **content gate** -- every string
+the spec registered must actually show up in the rendered card, which is how text that is
+neither overflowing nor clipped but simply never drawn gets caught. The LLM is never asked to
+"make it look right".
 
 ## Layouts (13)
 

@@ -15,7 +15,9 @@
       "stage": {w, h},                # SVG 画布
       "svg":  [{s, x, y, w, h}],      # 每个 <text> 的真实 bbox（文档序）
       "html": [{s, w, sw, cw, h}],    # .row 的宽/scrollWidth
-      "card": {w, h, sh}              # 卡片容器
+      "card": {w, h, sh},             # 卡片容器
+      "text": "...",                  # 卡片全部可见文字（内容门用）
+      "fit":  {rowBottom, limit, n}   # HTML 行的纵向拟合
     }
 """
 import io
@@ -50,6 +52,9 @@ MEASURE_FN = """(function(){
   if (card) { var cb = card.getBoundingClientRect();
     rep.card = {w: +cb.width.toFixed(1), h: +cb.height.toFixed(1),
                 sh: card.scrollHeight};
+    /* 内容门用：卡片里所有可见文字（含 SVG <text>）。规格里登记过的每一段文字
+       都必须在这里找到 —— 几何检查抓不到「字被吞掉」，因为图上压根没那行字。 */
+    rep.text = card.textContent || '';
     /* 纵向体检：bullets 这类 HTML 行版式的行高由内容撑开（一行 desc ≈ 57px，
        加上 head 与 padding，单行就有 200px），SVG 的宽度检查完全管不到它。
        卡片自带 padding，内容真正的底边上限 = card.bottom - paddingTop。 */
@@ -146,15 +151,36 @@ def _boxes_of(html_path):
     return json.loads(m.group(1)) if m else []
 
 
-def analyze(rep, boxes=None):
+def _texts_of(html_path):
+    """从 HTML 里取出 build 时埋下的文字清单（<!--T2I_TEXTS:[...]-->）。
+
+    用非贪婪到 `-->` 为止，而不是到第一个 `]`：文字里本来就可能出现方括号。
+    """
+    src = io.open(html_path, encoding="utf-8").read()
+    m = re.search(r"<!--T2I_TEXTS:(.*?)-->", src, re.S)
+    return json.loads(m.group(1)) if m else []
+
+
+def analyze(rep, boxes=None, texts=None):
     """把测量结果变成溢出清单。
 
-    三类问题：
+    五类问题：
+      missing-text   规格里登记的文字没有出现在图上（引擎吞字，几何检查抓不到）
       out-of-canvas  文本超出 SVG 画布（会被 overflow:hidden 静默裁掉）
       box-overflow   文本超出它所在的方框（画布内看得见，但压框了）
       html-overflow  HTML 行横向溢出（scrollWidth > clientWidth）
+      v-overflow     HTML 行整体撑破卡片底边
     """
     issues = []
+    # ★ 内容门：build 时登记过（= 规格里写了）的文字，必须真的出现在卡片上。
+    # 为什么必须先查它：文字被静默吞掉时（_inline 漏了尾巴、整条副标题变空），
+    # 图上没有那行字，所以既不溢出也不压框 —— 另外几道门永远发现不了。
+    seen = re.sub(r"\s+", "", rep.get("text") or "")
+    if texts and seen:
+        for t in texts:
+            if t not in seen:
+                issues.append({"kind": "missing-text", "text": t[:44],
+                               "note": "规格里有、图上没有（引擎吞字）"})
     st = rep.get("stage") or {"w": 824, "h": 900}
     W, H = st["w"], st["h"]
     for ti, t in enumerate(rep.get("svg", [])):
@@ -195,4 +221,4 @@ def analyze(rep, boxes=None):
 def measure_and_analyze(html_path, browser=None):
     html_path = os.path.abspath(html_path)
     rep = measure(html_path, browser)
-    return rep, analyze(rep, _boxes_of(html_path))
+    return rep, analyze(rep, _boxes_of(html_path), _texts_of(html_path))

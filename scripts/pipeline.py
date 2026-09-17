@@ -85,8 +85,10 @@ def node_verify(state):
     for page, lst in state["issues"].items():
         for i in lst:
             if (i["kind"] == "out-of-canvas" and i.get("where") == "y") \
-                    or i["kind"] == "v-overflow":
-                layout_issues.append((page, i))          # 版式问题，脚本修不了
+                    or i["kind"] in ("v-overflow", "missing-text"):
+                # 版式 / 内容问题，脚本修不了：v-overflow 要减条数或拆页，
+                # missing-text 是引擎把字吞了，必须让人（或 Agent）看
+                layout_issues.append((page, i))
             else:
                 width_issues.setdefault(page, []).append(i)
     state["width_issues"] = width_issues

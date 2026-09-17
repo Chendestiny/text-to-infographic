@@ -7,7 +7,7 @@
 
 | 文档 | 回答什么问题 |
 |---|---|
-| [architecture.md](architecture.md) | 为什么是"LLM 填表 + 脚本渲染"？两道门各自管什么？校准闭环怎么转？ |
+| [architecture.md](architecture.md) | 为什么是"LLM 填表 + 脚本渲染"？两道门（+ 门内的内容门）各自管什么？校准闭环怎么转？ |
 | [layouts.md](layouts.md) | 13 种版式每个字段叫什么、能放多少字、什么时候该用哪个 |
 | [contracts.md](contracts.md) | 字数契约怎么读、硬约束和软约束的区别、违规了怎么改 |
 | [rendering.md](rendering.md) | 渲染后端（CDP / CLI）、profile 冲突这个坑、`T2I_BACKEND` 怎么用 |
