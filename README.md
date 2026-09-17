@@ -10,7 +10,7 @@
 字号、留白、描边、配色全由代码决定：
 
 ```
-文章.md ──> [LLM] spec.json ──> validate ──> build ──> measure（真实浏览器实测）──> PNG × N
+文章.md ──> [LLM] spec.json ─> validate ──> build ──> measure（真实浏览器实测）──> PNG × N
 ```
 
 ---
@@ -19,40 +19,29 @@
 
 ### 1 · 装：把这句话发给你的 Agent
 
-**这是个 skill，不是命令行工具** —— 装它、用它都该让 Agent 兜底。下面这句直接复制给你在用的
-Agent（dsh / Claude Code / Codex / zcode / Cursor… 任何能联网 + 能执行命令的都行）：
-
-Windows（PowerShell）：
+**Windows（PowerShell）：**
 
 ```text
 帮我安装 text-to-infographic：irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
 ```
 
-macOS / Linux / WSL：
+**macOS / Linux / WSL：**
 
 ```text
 帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
 ```
 
-> **为什么发给 Agent，而不是让用户自己去敲 cmd**：脚本要 clone 到
-> `~/.agents/skills/text-to-infographic`、探 Python、找 Chrome/Edge、按需补 `pyyaml`、
-> 最后跑一遍 `doctor.py` —— 中间任何一步缺东西（没装 Python、浏览器不在默认路径），
-> Agent 能当场判断并补上；更重要的是**装完 Agent 才知道该按 [SKILL.md](SKILL.md) 的五步流程走**，
-> 而不是只会在终端里跑命令。
->
-> 两个平台脚本做的是同一件事：clone + 环境检查 + doctor。
-> 只想体检不写入：加 `-CheckOnly`（Windows）/ `--check-only`（macOS/Linux）。
+> 这是个 skill，装它、用它都让 Agent 兜底：脚本会 clone 到 `~/.agents/skills/`、探 Python / Chrome / 字体、
+> 缺 `pyyaml` 按需补、最后跑一遍 `doctor`。只想体检不写入：加 `-CheckOnly`（Windows）/ `--check-only`。
 
 ### 2 · 用：还是对 Agent 说一句
-
-装好之后不用记任何参数，直接把需求丢给它 —— 路径和文件名换成你自己的：
 
 ```text
 用 text-to-infographic（~/.agents/skills/text-to-infographic）
 把 D:\notes\article.md 转成小红书图文，输出到桌面
 ```
 
-**你只需要说两句话**（装一句、用一句），其余都写在 [SKILL.md](SKILL.md) 里，Agent 自己会做：
+其余都写在 [SKILL.md](SKILL.md) 里，Agent 自己会做：
 
 | Agent 会自动做的事 | 依据 |
 |---|---|
@@ -65,7 +54,39 @@ macOS / Linux / WSL：
 
 产出是 `card-01.png …`，默认 2160×2880（3:4 的 2 倍图；`render.py --scale 1` 可出 1080×1440）。
 
-**页数参考区间 6–9 张**（小红书配图规范：官方上限 18 张、推荐 6–9 张）—— 页数由"切法"决定，
+### 3 · 给要改代码的人：自己敲
+
+```bash
+git clone https://github.com/Chendestiny/text-to-infographic
+cd text-to-infographic
+python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
+python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
+```
+
+- 依赖只有 Python 3.8+ 和任意 Chromium 浏览器（自动探测），字体已内置；`.json` 规格零第三方依赖
+- 规格怎么写直接抄 [examples/](examples/)（拿 `examples/agent-roadmap.json` 跑一遍就有成品）
+
+---
+
+## 🖼 出图效果
+
+一份长文进去，**9 张图**出来 —— 2160×2880（3:4 的 2 倍图），直接能发。挑 6 张，一行两张
+（这套是真实跑批的产物，不是设计稿）：
+
+|  |  |
+|---|---|
+|![四宫格封面](docs/images/showcase/01-cover.png)|![左右对照](docs/images/showcase/02-compare.png)|
+|![横向链路](docs/images/showcase/03-flow.png)|![环形循环](docs/images/showcase/04-cycle.png)|
+|![竖向步骤链](docs/images/showcase/05-chain.png)|![光谱决策](docs/images/showcase/06-spectrum.png)|
+
+第一张是**汇总封面**：2×2 四宫格，每格一个微缩版式——等于把目录画出来。之后每页一个要点。
+按 `card-01 … card-09` 顺序发出去就是一套完整轮播，不需要再修图。
+
+---
+
+## 📐 页数：参考区间与密度
+
+**参考区间 6–9 张**（小红书配图规范：官方上限 18 张、推荐 6–9 张）。页数由"切法"决定，
 **不随文章行数增长**：张数 ≈ 1（封面）+ 章节数，平均每节 < 400 汉字时两节并一页，
 全篇 < 1.5k 汉字压到 4~5 张。228 行的文章是 7 张，1000 行的文章也是 8~10 张。
 
@@ -80,39 +101,9 @@ macOS / Linux / WSL：
 密度靠版式承载（一页 `bullets` 4~6 条 / `chain` 5~6 步 / `compare` 4+4 条），页数才压得住。
 `validate.py` 会按这个区间提示：超预算报软约束，超过平台上限 18 张报硬违规。
 
-### 3 · 给要改代码的人：自己敲
-
-```bash
-git clone https://github.com/Chendestiny/text-to-infographic
-cd text-to-infographic
-python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
-python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
-```
-
-- 规格是 **.json（零第三方依赖）** 或 .yaml（需 `pip install pyyaml`）；写法直接抄
-  [examples/](examples/) 里现成的（拿 `examples/agent-roadmap.json` 跑一遍就有成品）
-- 渲染需要任意 Chromium 系浏览器（Chrome / Edge / Chromium），自动探测
-- 字体已内置，不用另外装
-- Windows 上 `python` 不在 PATH 时改成 `py -3`
-
 ---
 
-## 🖼 出图效果
-
-一份长文进去，**9 张图**出来 —— 2160×2880（3:4 的 2 倍图），直接能发。挑 6 张，一行两张：
-
-|  |  |
-|---|---|
-|![四宫格封面](docs/images/showcase/01-cover.png)|![左右对照](docs/images/showcase/02-compare.png)|
-|![横向链路](docs/images/showcase/03-flow.png)|![环形循环](docs/images/showcase/04-cycle.png)|
-|![竖向步骤链](docs/images/showcase/05-chain.png)|![光谱决策](docs/images/showcase/06-spectrum.png)|
-
-第一张是**汇总封面**：2×2 四宫格，每格一个微缩版式——等于把目录画出来。之后每页一个要点。
-按 `card-01 … card-09` 顺序发出去就是一套完整轮播，不需要再修图。
-
----
-
-##  怎么保证不出丑：两道门、三道检查
+## 🧭 怎么保证不出丑：两道门、三道检查
 
 每种版式的**每个文字槽位**都在 [templates/contracts.yaml](templates/contracts.yaml)
 里声明了字数预算，数值来自实际渲染好看的真实文案——不是拍脑袋。文案是在预算内写出来的，
@@ -198,7 +189,7 @@ SKILL.md                  面向 Agent 的入口（工作流 + 契约 + 文案�
 scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装配
 scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
 scripts/build.py          CLI：规格 → HTML
-scripts/validate.py       CLI：字数契约校验（规格门）
+scripts/validate.py       CLI：字数契约校验（规格门）+ 页数区间提示
 scripts/render.py         CLI：HTML → PNG（浏览器探测）
 scripts/measure.py        真实浏览器文本测量（像素门 + 内容门）
 scripts/pipeline.py       build → measure → 修正循环 → render，最多 3 轮
@@ -213,13 +204,8 @@ install.ps1 / install.sh  一句话安装脚本（clone + 环境检查 + doctor�
 
 ---
 
-##  致谢
-
-- README 里那套图是一次真实跑批的产物（示例文章：《一张图看懂 Agent》）——
-  内容与工具无关，只是拿来当一份四千字左右的真实测试样本。
-- 内置字体：**站酷快乐体（ZCOOL KuaiLe）**，仓库里唯一的第三方资源。
-
 ## 📄 许可
 
-代码 MIT。内置字体使用 [SIL Open Font License 1.1](assets/fonts/OFL.txt)，
-与 MIT 的分界见 [LICENSE](LICENSE)。
+代码 MIT。内置字体（站酷快乐体 / ZCOOL KuaiLe）使用
+[SIL Open Font License 1.1](assets/fonts/OFL.txt)，与 MIT 的分界见 [LICENSE](LICENSE)——
+它也是仓库里唯一的第三方资源。
