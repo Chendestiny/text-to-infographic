@@ -6,20 +6,33 @@
 
 GitHub：https://github.com/Chendestiny/text-to-infographic
 
-## 先看怎么用：两句话
+## 先看怎么用：三句话
+
+**① 装 —— 一句话**
 
 ```
 帮我安装 text-to-infographic：
 irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
 ```
 
+macOS / Linux 换成 `curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash`。
+脚本会把仓库 clone 到 `~/.agents/skills/`，再逐项自检 Python、浏览器、字体完整性，缺什么打印什么。
+
+**② 用 —— 把文件交给它（路径和文件名换成你自己的）**
+
+```
+用 text-to-infographic（~/.agents/skills/text-to-infographic）
+把 D:\notes\article.md 转成小红书图文，输出到桌面
+```
+
+**③ 偷懒 —— 一句话也行**
+
 ```
 把这篇总结成自媒体多图
 ```
 
-第一句安装：环境自检（Python、浏览器、字体完整性）逐项跑一遍，缺什么打印什么。
-第二句触发：Agent 按 SKILL.md 里的纪律读文章、填规格，跑完校验循环交付成品。
-macOS / Linux：`curl -fsSL .../install.sh | bash`。
+Agent 按 SKILL.md 里的纪律读文章、填规格，跑完校验循环后交付：
+`card-01.png …` 直接落在桌面，2160×2880，可以立刻发。
 
 ## 痛点：两个方向都堵死了
 
@@ -41,9 +54,9 @@ macOS / Linux：`curl -fsSL .../install.sh | bash`。
               LLM                 写死在脚本里              （LangGraph 风格）
 ```
 
-- **Agent 只填表，不碰像素。** 11 种版式（封面/步骤链/环形循环/光谱/时间轴/横向链路/清单/对照/四象限/结构图/自定义）全部是确定性代码。同样的规格永远渲染出同样的图，任何一页都能手改。
+- **Agent 只填表，不碰像素。** 13 种版式（四宫格汇总封面/中心圆/步骤链/环形循环/光谱/时间轴/横向链路/清单/对照/四象限/金字塔/结构图/自定义 SVG）全部是确定性代码。同样的规格永远渲染出同样的图，任何一页都能手改。
 - **容量契约前置。** 每个版式的每个文字槽位都在 `templates/contracts.yaml` 里声明了字数范围（N-M），数值来自实际渲染好看的真实文案。`validate.py` 在渲染前逐条机械校验，超了报精确路径：`card-03(chain).steps[1].text: 17.5 > max 15`。Agent 拿着报错一次改对。
-- **像素门用真实浏览器实测。** 文字宽度靠估算必翻车（拉丁宽、bold、letter-spacing 全是变量），所以 `measure.py` 让 Chrome 渲染后用 `getBBox()` 拿每个文本的真实包围盒，和 build 时埋进 HTML 的方框清单比对。三类问题：出画布、压框、HTML 行溢出。
+- **像素门用真实浏览器实测。** 文字宽度靠估算必翻车（拉丁宽、bold、letter-spacing 全是变量），所以 `measure.py` 让 Chrome 渲染后用 `getBBox()` 拿每个文本的真实包围盒，和 build 时埋进 HTML 的方框清单比对。四类问题：出画布、压框、HTML 行溢出，以及**静默吞字**——规格里登记过的文字根本没画出来，这类既不溢出也不压框，只能靠内容清单比对抓出来。
 - **校准闭环。** 测出「真实宽 / 估算宽」回写成校准因子，估算器自己越跑越准；仍溢出的文本注入 `textLength` 强制压回框内。
 - **LLM 兜底有明确入口。** 3 轮压不下的文案进 `needs_llm` 清单——那不是失败，是"这段该重写文案"的精确信号。实测抓到过一次：封面大字在 248px 的框里放了 5 个汉字加一个英文词，循环 3 轮正确升级，改规格后一轮通过。
 

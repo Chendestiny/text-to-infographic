@@ -97,7 +97,7 @@ python make_layout_gallery.py -o gallery-out
 
 - `docs/layouts.md`：加一节（字段表 + 预算 + 什么时候用）
 - `SKILL.md` 的版式表：加一行
-- `README.md` / `README.zh-CN.md` 的版式表：加一行
+- `README.md` / `README.en.md` 的版式表：加一行
 - `docs/images/layouts/`：放一张样张
 
 **没同步文档 = 文档有洞**，下个 Agent 会照着过时信息干活（这事真的发生过）。

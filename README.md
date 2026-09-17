@@ -1,108 +1,127 @@
 # text-to-infographic
 
-> **Turn a long article into a ready-to-publish 3:4 card carousel** — a cover plus one page per key
-> point, hand-drawn card style. You hand it the article; the scripts own every pixel.
+> **把长文变成一套直接能发的小红书 / Instagram 图文** —— 封面 + 每页一个要点，3:4 竖版手绘卡片风。
+> 你只管把文章交给它，像素全部由脚本决定。
 
-[中文说明](README.zh-CN.md) · [SKILL.md](SKILL.md) · [docs/](docs/)
+[English](README.en.md) · [SKILL.md](SKILL.md) · [docs/](docs/)
 
-Text is always crisp (never garbled the way image generation renders CJK), every page stays
-hand-editable, and the same spec always renders the same set of images — byte for byte.
+文字始终清晰（不像 AI 生图那样糊字，中文尤甚），每一页都是能手改的规格而不是位图，
+同一份规格重复跑永远出同一套图。模型只在**声明的字数预算内**写文案，
+字号、留白、描边、配色全由代码决定：
+
+```
+文章.md ──> [LLM] spec.json ──> validate ──> build ──> measure（真实浏览器实测）──> PNG × N
+```
 
 ---
 
-## 🖼 What comes out
+## 🖼 出图效果
 
-A real run: 《一张架构图说清楚 Agent + ReAct 循环 + Workflow》 → **9 cards**, 2160×2880 (3:4 @2x).
-Six of them, two per row:
+一份长文进去，**9 张图**出来 —— 2160×2880（3:4 的 2 倍图），直接能发。挑 6 张，一行两张：
 
 |  |  |
 |---|---|
-|![summary cover](docs/images/showcase/01-cover.png)|![compare](docs/images/showcase/02-compare.png)|
-|![flow](docs/images/showcase/03-flow.png)|![cycle](docs/images/showcase/04-cycle.png)|
-|![chain](docs/images/showcase/05-chain.png)|![spectrum](docs/images/showcase/06-spectrum.png)|
+|![四宫格封面](docs/images/showcase/01-cover.png)|![左右对照](docs/images/showcase/02-compare.png)|
+|![横向链路](docs/images/showcase/03-flow.png)|![环形循环](docs/images/showcase/04-cycle.png)|
+|![竖向步骤链](docs/images/showcase/05-chain.png)|![光谱决策](docs/images/showcase/06-spectrum.png)|
 
-The first card is a **summary cover**: a 2×2 grid where each quadrant is a miniature layout — the
-table of contents, drawn. Every card after it carries one idea. Publish them in `card-01 … card-09`
-order and the carousel is done; nothing needs retouching.
-
----
-
-## 🚫 Why not just let the model draw it?
-
-Image generation garbles text, CJK worst of all. And letting an LLM free-style HTML "infographics"
-gives you something different every run: inconsistent spacing, overflowing text, one-off layouts.
-
-So the LLM is moved to where it is strong (reading, structuring, compressing) and the pixels go to a
-deterministic renderer:
-
-```
-article.md ──> [LLM] spec.json ──> validate ──> build ──> measure (real browser) ──> PNG × N
-                the only step      spec gate   HTML      pixel gate + fix loop
-                needing the LLM
-```
-
-The LLM never touches a font size, a margin, or a stroke. It writes copy that fits a declared budget,
-and scripts decide everything else — that is why a run is reproducible and a page is editable.
+第一张是**汇总封面**：2×2 四宫格，每格一个微缩版式——等于把目录画出来。之后每页一个要点。
+按 `card-01 … card-09` 顺序发出去就是一套完整轮播，不需要再修图。
 
 ---
 
-## 🚀 Quick start
+##  快速开始
+
+### 1 · 安装
+
+**Windows（PowerShell）** —— 一行装到 `~/.agents/skills/text-to-infographic`：
+
+```powershell
+irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
+```
+
+**macOS / Linux：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
+```
+
+脚本自己 clone、检查 Python、按需装 pyyaml、找 Chrome/Edge、验字体，最后跑一遍 `doctor.py`。
+加 `-CheckOnly`（Windows）/ `--check-only`（macOS/Linux）只体检不写入。
+
+**想改代码就手动 clone：**
 
 ```bash
 git clone https://github.com/Chendestiny/text-to-infographic
 cd text-to-infographic
-
-python scripts/doctor.py                                         # environment self-check
-python scripts/pipeline.py examples/agent-roadmap.json -o out/   # full run -> out/card-*.png
+python scripts/pipeline.py examples/agent-roadmap.json -o out/    # 先用示例规格跑一套
 ```
 
-- Windows: use `py -3` if `python` is not on PATH
-- Specs are **.json (zero third-party deps)** or .yaml (`pip install pyyaml`)
-- Rendering needs any Chromium browser (Chrome / Edge / Chromium) — auto-detected
-- The font is bundled — nothing else to install
+### 2 · 让 Agent 干活（推荐用法）
 
-Then point your agent at [SKILL.md](SKILL.md); manuals live in [docs/](docs/).
+装好之后不用记任何参数，直接把需求丢给 Agent —— 路径和文件名换成你自己的：
+
+```
+用 text-to-infographic（~/.agents/skills/text-to-infographic）
+把 D:\notes\article.md 转成小红书图文，输出到桌面
+```
+
+Agent 按 [SKILL.md](SKILL.md) 走五步：读文章 → 写规格 → 过规格门 → 跑流水线 → 交图。
+产出是 `card-01.png …`，2160×2880（3:4 的 2 倍图）；长文一般切 **6–9 页**，第一页是汇总封面。
+
+### 3 · 或者自己敲命令
+
+```bash
+python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
+python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
+```
+
+- 规格是 **.json（零第三方依赖）** 或 .yaml（需 `pip install pyyaml`）；写法直接抄
+  [examples/](examples/) 里现成的
+- 渲染需要任意 Chromium 系浏览器（Chrome / Edge / Chromium），自动探测
+- 字体已内置，不用另外装
+- Windows 上 `python` 不在 PATH 时改成 `py -3`
 
 ---
 
-## 🧭 How it stays correct: two gates, three checks
+## 🧭 怎么保证不出丑：两道门、三道检查
 
-Every layout declares a **character budget for every text slot** in
-[templates/contracts.yaml](templates/contracts.yaml), measured from renders that actually look good —
-not guessed. Copy is written *inside* that budget instead of hoping it fits.
+每种版式的**每个文字槽位**都在 [templates/contracts.yaml](templates/contracts.yaml)
+里声明了字数预算，数值来自实际渲染好看的真实文案——不是拍脑袋。文案是在预算内写出来的，
+不是写完再祈祷能放下。
 
-| gate | what it is | catches |
+| 门 | 是什么 | 抓什么 |
 |---|---|---|
-| **spec gate** `validate.py` | pure string math, milliseconds, zero tokens | copy over budget, reported by exact path: `card-03(chain).steps[1].text  17.5 > max 15` |
-| **pixel gate** `measure.py` | renders in a real browser and reads **actual text bounding boxes** via `getBBox()` | real width overflow, text past the canvas, text spilling out of its box, HTML rows breaking the card bottom |
-| **content gate** (inside the pixel gate) | every string the spec registered must actually appear in the render | text that is neither overflowing nor clipped but simply **never drawn** |
+| **规格门** `validate.py` | 纯字符串计算，毫秒级，零 token | 文案超预算，报**精确路径**：`card-03(chain).steps[1].text  17.5 > max 15` |
+| **像素门** `measure.py` | 真实浏览器渲染，用 `getBBox()` 量**每个文本的真实包围盒** | 真实宽度溢出、画到画布外、压出方框、HTML 行撑破卡片底边 |
+| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字** |
 
-Misfit copy is escalated as a `needs_llm` list, so the model gets a precise error instead of "it looks
-broken". The pipeline calibrates its own width estimator and re-runs — up to three rounds — before
-asking for help. Full detail: [docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md).
+压不下的文案会进 `needs_llm` 清单，让模型拿到精确报错而不是「看起来坏了」。
+编排流还会自己校准宽度估算器、必要时注入 `textLength`，最多重跑 3 轮再求援。
+细节：[docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md)。
 
 ---
 
-## 🧩 Layouts (13)
+##  版式（13 种）
 
-| layout | shape | use for |
+| 版式 | 形态 | 适合 |
 |---|---|---|
-| `cover` | **summary cover**: title + 2×2 grid of mini layouts | first page |
-| `hub` | title + hub circle + concept boxes | parallel concepts |
-| `chain` | vertical boxes + arrows | steps, loops |
-| `cycle` | nodes on a circle, curved arrows | ReAct / PDCA |
-| `spectrum` | gradient arrow + end labels + list | "A or B?" trade-offs |
-| `timeline` | centered vertical axis, alternating labels | stages, evolution |
-| `flow` | horizontal nodes (+ bottom strip) | pipelines, data flow |
-| `bullets` | bullet rows that stretch to fill | pitfalls, checklists |
-| `compare` | two columns, inner blocks auto-fit | do / don't |
-| `matrix` | 2×2 quadrants | pick by scale or dimension |
-| `pyramid` | stacked trapezoid tiers | capability levels, priorities |
-| `arch` | nested boxes + arrow + chip row | roles, architecture |
-| `raw` | inline SVG escape hatch | anything the above cannot express |
+| `cover` | **汇总封面**：标题 + 2×2 四宫格，每格一个微缩版式 | 封面 |
+| `hub` | 标题 + 中心圆 + 概念框 | 讲并列概念 |
+| `chain` | 竖排方框 + 箭头 | 步骤、循环 |
+| `cycle` | 节点围成环 + 弧形箭头 | ReAct / PDCA |
+| `spectrum` | 渐变箭头 + 两端标签 + 列表 | 「什么时候用 A 还是 B」 |
+| `timeline` | 居中竖轴、左右交替 | 阶段、演进 |
+| `flow` | 横排节点（可带底部一排） | 链路、数据流 |
+| `bullets` | • 列表行自适应填满 | 坑、清单 |
+| `compare` | 左右两列、内层块自适应 | 反例 vs 正解 |
+| `matrix` | 2×2 四象限 | 按规模/维度选型 |
+| `pyramid` | 梯形分层 | 能力层级、优先级分层 |
+| `arch` | 嵌套框 + 箭头 + 底部一排 | 角色、架构 |
+| `raw` | 内联 SVG 逃生舱 | 以上都表达不了时 |
 
 <details>
-<summary><b>All 12 rendered layout samples</b> (raw has none — click to expand)</summary>
+<summary><b>12 张版式实渲染样张</b>（raw 不单独出样张，点开看）</summary>
 
 |  |  |
 |---|---|
@@ -115,69 +134,64 @@ asking for help. Full detail: [docs/contracts.md](docs/contracts.md) · [docs/ar
 
 </details>
 
-Decorations (gears, stars — SVG paths, no bitmaps) rotate on their own, and a summary cover skips them
-so they never sit on top of a quadrant:
-
-![decoration parts](docs/images/decor-sheet.png)
-
 ---
 
-## ✍️ Spec syntax
+## ✍️ 文案语法
 
-`[[keyword]]` paints a marker-pen highlight behind the text (colors rotate: blue → yellow → pink →
-green → gray → orange); `[[keyword|b]]` pins a color. Boxes take `fill` the same way, and boxes are
-filled by default — write `fill: none` to leave one blank on purpose.
+`[[关键词]]` 给文字加马克笔底色（颜色自动轮换：蓝 → 黄 → 粉 → 绿 → 灰 → 橙）；
+`[[关键词|b]]` 指定颜色。方框同样能用 `fill`，而且默认全部上色——
+想让某个框留白表达「这步不重要」才写 `fill: none`。
 
 ```yaml
 - layout: chain
   title: Function Calling
-  subtitle: "[[tool_call]] is emitted by the model — your code does the work"
+  subtitle: "[[tool_call]] 是模型吐的，干活的是代码"
   steps:
-    - {text: "① inject the [[tools definition]]"}
-    - {text: "③ the model returns tool_calls", fill: yellow}
-  note: "loop back to ② until the model stops calling tools"
+    - {text: "① 注入 [[tools 定义]]"}
+    - {text: "③ 模型返回 tool_calls", fill: yellow}
+  note: "回到 ② 步，直到模型不再调工具"
 ```
 
 ---
 
-## 📦 Requirements
+## 📦 依赖
 
-| dependency | required? | notes |
+| 依赖 | 必需？ | 说明 |
 |---|---|---|
-| Python 3.8+ | yes | core scripts are stdlib-only |
-| pyyaml | optional | only for .yaml specs; **.json specs need zero third-party packages** |
-| Chromium browser | to render | Chrome / Edge / Chromium, auto-detected (CDP or CLI backend) |
-| multimodal model | optional | correctness is pure text measurement; vision only adds an aesthetic last pass |
+| Python 3.8+ | 必需 | 核心脚本只用标准库 |
+| pyyaml | 可选 | 只有 .yaml 规格需要；**.json 规格零第三方依赖** |
+| Chromium 浏览器 | 渲染必需 | Chrome / Edge / Chromium，自动探测（CDP 或 CLI 后端） |
+| 多模态模型 | 可选 | 正确性校验是纯文本度量；视觉只多一步审美终检 |
 
-## 📁 Repository layout
+## 📁 仓库结构
 
 ```
-SKILL.md                  agent-facing entry point (workflow, contract, copy discipline)
-scripts/ink.py            rendering core: hand-drawn primitives + 13 layouts + page assembly
-scripts/decor.py          decoration parts (gears / stars, pure SVG)
-scripts/build.py          CLI: spec → HTML
-scripts/validate.py       CLI: character-contract check (spec gate)
-scripts/render.py         CLI: HTML → PNG (browser detection)
-scripts/measure.py        real-browser text measurement (pixel + content gates)
-scripts/pipeline.py       build → measure → fix loop → render, up to 3 rounds
-scripts/doctor.py         environment self-check
-scripts/vision_probe.py   one-shot check of whether the current model can really read images
-templates/contracts.yaml  per-layout character budgets (the contract)
-examples/                 5 complete specs (both .json and .yaml)
-docs/                     manuals: layouts, contracts, rendering, troubleshooting, extending
-docs/images/showcase/     the real run shown at the top of this README
+SKILL.md                  面向 Agent 的入口（工作流 + 契约 + 文案纪律）
+scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装配
+scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
+scripts/build.py          CLI：规格 → HTML
+scripts/validate.py       CLI：字数契约校验（规格门）
+scripts/render.py         CLI：HTML → PNG（浏览器探测）
+scripts/measure.py        真实浏览器文本测量（像素门 + 内容门）
+scripts/pipeline.py       build → measure → 修正循环 → render，最多 3 轮
+scripts/doctor.py         环境自检
+scripts/vision_probe.py   一次性判定当前模型能不能真的读图
+templates/contracts.yaml  每种版式的字数预算（契约）
+examples/                 5 份完整规格（.json 与 .yaml 各一套）
+docs/                     手册：版式、契约、渲染、排障、扩展
+docs/images/showcase/     本 README 顶部那套真实跑批
+install.ps1 / install.sh  一句话安装脚本（clone + 环境检查 + doctor）
 ```
 
 ---
 
-## 🙏 Credits
+## 🙏 致谢
 
-- The carousel shown above is rendered from the author's own article
-  《一张架构图说清楚 Agent + ReAct 循环 + Workflow》 — the subject is irrelevant to the tool,
-  it is just a convenient long-form test case.
-- Bundled font: **ZCOOL KuaiLe / 站酷快乐体**, the only third-party asset in the repo.
+- 顶部这套图是一次真实跑批的产物（示例文章名：《一张图看懂 Agent》）——
+  内容与工具无关，只是拿来当一份四千字左右的真实测试样本。
+- 内置字体：**站酷快乐体（ZCOOL KuaiLe）**，仓库里唯一的第三方资源。
 
-## 📄 License
+## 📄 许可
 
-MIT for the code. The bundled font is under the
-[SIL Open Font License 1.1](assets/fonts/OFL.txt) — see [LICENSE](LICENSE) for the split.
+代码 MIT。内置字体使用 [SIL Open Font License 1.1](assets/fonts/OFL.txt)，
+与 MIT 的分界见 [LICENSE](LICENSE)。
