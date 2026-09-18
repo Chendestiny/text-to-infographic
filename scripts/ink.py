@@ -68,6 +68,28 @@ def _reg_ink(kind, x, y, w, h):
                  "w": float(w), "h": float(h)})
 
 
+def note_band(size, lines=1, gap=10):
+    """备注需要预留的竖直空间：上沿余量 + 行数 + 下沿余量。
+
+    字形上沿 ≈ 1.05×字号、下沿 ≈ 1.0×字号（实测：38px 字的 rect 高约 50px，
+    基线在中间偏下）。余下的 6px 是呼吸位。
+    """
+    return int(gap + 1.05 * size + (lines - 1) * 1.34 * size + 1.0 * size + 6)
+
+
+def note_baseline(default_y, size, lines=1, gap=10):
+    """备注基线的**下限**：让首行字形的顶边落在已登记方框的下沿之下。
+
+    实测教训：只保证"基线低于方框下沿"是不够的 —— cover / chain / compare 三处
+    备注都因此压在方框下边框上（几何门的 crosses-box），肉眼很容易漏。
+    下沿取自 _INK 登记表（浏览器里量出来的几何），所以不依赖任何手写常数。
+    """
+    bottoms = [b["y"] + b["h"] for b in _INK if b["kind"] == "box"]
+    deep = max(bottoms) if bottoms else 0.0
+    need = gap + 1.05 * size + (lines - 1) * 0.67 * size
+    return max(default_y, deep + need)
+
+
 def _reg_cap(tag, text, size, maxw, max_lines=1):
     """登记一个文字槽的几何（折行前的原文 + 设计字号 + 可用宽 + 行数上限）。"""
     if maxw is None:
@@ -812,7 +834,8 @@ def layout_cover(card, seed):
     bx = BOX_INSET
     bw = W_INNER - 2 * bx
     g = 22
-    note_h = 54 if card.get("note") else 0
+    # 备注预留高度按「字形需要多少」算（原来写死 54，而 38px 字光上沿就要 40px）
+    note_h = note_band(SIZES["note"], 1) if card.get("note") else 0
     # 四宫格的高度**必须按真实页头算**。原来写死 890/944：标题一折成两行（或副标题长一点），
     # stage 就顶破卡片底部，而 .card 是 overflow:hidden —— 底部被静默裁掉，
     # measure（只量横向溢出）和肉眼都容易漏。这里改成按真实预算算高度。
@@ -845,7 +868,10 @@ def layout_cover(card, seed):
         parts.append(fn(x + 22, y + 84, tw_ - 44, th_ - 108,
                         q.get("items") or [], pal, i * 23 + 7, q))
     if card.get("note"):
-        parts.append(txt_block(W_INNER / 2, grid_h + note_h - 24, strip_hl(card["note"]),
+        # 基线：默认放在预留带里，但**必须**低于四宫格最深方框的下沿 + 字形上沿余量
+        ny = note_baseline(grid_h + note_h - 1.0 * SIZES["note"],
+                           SIZES["note"], 1)
+        parts.append(txt_block(W_INNER / 2, ny, strip_hl(card["note"]),
                                SIZES["note"], W_INNER, max_lines=1, tag="cover-note"))
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
@@ -860,7 +886,9 @@ def layout_chain(card, seed):
     n = max(1, len(steps))
     avail = 900
     note = card.get("note")
-    band = avail - (76 if note else 0)
+    # 备注（最多两行）真正需要的空间：原来只留 76px，而两行 38px 字连字形上沿就要 100px+
+    nb = note_band(SIZES["note"], 2) if note else 0
+    band = avail - nb
     bh = min(150, int((band - (n - 1) * 34) / n))
     step = bh + 34
     top = (band - (n * bh + (n - 1) * 34)) / 2.0
@@ -883,7 +911,9 @@ def layout_chain(card, seed):
         if i < n - 1:
             parts.append(v_arrow(W_INNER / 2, y + bh, y + step - 2, "a0", i * 13 + 3))
     if note:
-        parts.append(txt_block(W_INNER / 2, avail - 34, strip_hl(note),
+        ny = note_baseline(avail - nb + 1.05 * SIZES["note"] + 0.67 * SIZES["note"] + 10,
+                           SIZES["note"], 2)
+        parts.append(txt_block(W_INNER / 2, ny, strip_hl(note),
                                SIZES["note"], W_INNER, max_lines=2, tag="chain-note"))
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
@@ -1076,7 +1106,10 @@ def layout_flow(card, seed):
     if card.get("note"):
         parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note"]),
                                SIZES["body"] - 6, W_INNER, max_lines=2, tag="flow-note"))
-        y += 58
+        # ★ 原来只 += 58：上一条的**末行基线**到下一条的**首行基线**实际只差 9px，
+        # 两行字真的叠在一起（几何门实测重叠 6971px²）。
+        # 要按"上一条的块高 + 下一条字形上沿"算：0.67×s1（2 行的块半高）+ 1.05×s2 + 0.67×s2 + 10
+        y += int(0.67 * (SIZES["body"] - 6) + note_band(SIZES["note"], 2) - 0.67 * SIZES["note"])
     if card.get("note2"):
         parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note2"]),
                                SIZES["note"], W_INNER, max_lines=2, tag="flow-note2"))
@@ -1165,7 +1198,9 @@ def layout_compare(card, seed):
     col_w, gap = 384, 40
     avail = 950
     parts = [defs("a0")]
-    box_y, box_h, pad = 90, 760, 36
+    # 有备注时两列压矮 30px：备注（两行 34px 字）需要 ~110px，原来 760+56 会压到列下沿
+    has_note = bool(left.get("note") or right.get("note"))
+    box_y, box_h, pad = 90, (730 if has_note else 760), 36
 
     def col(cfg, x0, seed0):
         g = [hl_line(x0 + col_w / 2, 52, parse_hl(cfg.get("label", ""), pal),
@@ -1186,7 +1221,8 @@ def layout_compare(card, seed):
                              parse_hl(text, pal, plain=not (f in (None, "none"))), 34,
                              pad=6, maxw=col_w - 72))
         if cfg.get("note"):
-            g.append(txt_block(x0 + col_w / 2, box_y + box_h + 56,
+            ny = note_baseline(box_y + box_h + 56, 34, 2)
+            g.append(txt_block(x0 + col_w / 2, ny,
                                strip_hl(cfg["note"]), 34, col_w - 12, max_lines=2,
                                tag="cmp-note"))
         return "".join(g)
