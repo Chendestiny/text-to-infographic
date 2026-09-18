@@ -191,17 +191,17 @@
       "subtitle": "核心是 [[LangChain]]，进阶 [[LangGraph]]",
       "items": [
         {
-          "false": "①",
+          "no": "①",
           "head": "直啃官方 TS 版文档",
           "desc": "汇总给 AI，[[严格按官网 Demo]] 整理成笔记。"
         },
         {
-          "false": "②",
+          "no": "②",
           "head": "低成本付费课程",
           "desc": "闲鱼等渠道入手，性价比极高。"
         },
         {
-          "false": "③",
+          "no": "③",
           "head": "LlamaIndex 选修",
           "desc": "RAG 场景的专属框架。"
         }
@@ -265,32 +265,32 @@
       "subtitle": "六步走完，[[转型闭环]]",
       "items": [
         {
-          "false": "①",
+          "no": "①",
           "head": "扫盲概念",
           "desc": "AI 工具 + B 站免费课。"
         },
         {
-          "false": "②",
+          "no": "②",
           "head": "LangChain TS 版",
           "desc": "官网 Demo 整理成笔记。"
         },
         {
-          "false": "③",
+          "no": "③",
           "head": "进阶 LangGraph",
           "desc": "多智能体编排 + LlamaIndex。"
         },
         {
-          "false": "④",
+          "no": "④",
           "head": "GitHub 项目",
           "desc": "入门 3 个 + 面试 3 个。"
         },
         {
-          "false": "⑤",
+          "no": "⑤",
           "head": "微调上魔搭",
           "desc": "免费算力练 LoRA。"
         },
         {
-          "false": "⑥",
+          "no": "⑥",
           "head": "工程化补齐",
           "desc": "架构 / 部署 / 运维闭环。"
         }

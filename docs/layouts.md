@@ -1,9 +1,25 @@
 # 版式参考（13 种）
 
 每个版式的**全部可用字段**、字数预算、以及什么时候该用。
-字数口径：**汉字 = 1，其他字符（字母/数字/空格/符号）= 0.5**；
-`[[高亮]]` 标记本身不计字数。预算的机器可读版本在
-[../templates/contracts.yaml](../templates/contracts.yaml)，这里是给人看的。
+
+**字数口径**：汉字 = 1；**其他一切（字母 / 数字 / 空格 / 换行 / 符号）= 0.5**；
+**全角标点（，。：、「」——）算 1**（码位 > U+2E80，跟汉字同档）；`[[高亮]]` 标记本身不计。
+`\n` 也按 0.5 计，所以换行不是免费的。拿不准就现算：
+`python scripts/validate.py --count "一段文案"`。
+预算的机器可读版本在 [../templates/contracts.yaml](../templates/contracts.yaml)，这里是给人看的。
+
+**字段支持总表** —— 规格里写了引擎不读的字段，以前会**静默消失**（三道门一起失明），
+现在规格门会拦；但先知道更省事：
+
+| 字段 | 支持 | 写了不渲染（规格门报违规） |
+|---|---|---|
+| `note` | arch / chain / cover / flow / hub / matrix / pyramid / spectrum / timeline | **bullets / compare / cycle / raw** |
+| `note2`、`mid` | 仅 `flow` | 其余全部 |
+| `dashed` + `dashed_label` | `chain` / `flow` | 其余全部 |
+| `gradient`（两端色） | 仅 `spectrum` | 其余全部 |
+
+> 别按文档猜字段能不能渲染——文档可能落后于代码。最快的验证：
+> `grep 'card.get("字段名")' scripts/ink.py`；有命中才是真的渲染。
 
 样张见 [../docs/images/layouts/](images/layouts/)。
 
