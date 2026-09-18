@@ -97,11 +97,15 @@ DOM_AUTOFIT_JS = """
 <script>
 (function () {
   document.querySelectorAll('.slots .s .t').forEach(function (el) {
+    var box = el.parentElement;                 /* .s —— 槽的固定尺寸 */
     var min = parseFloat(el.dataset.min || '15');
     var fs = parseFloat(getComputedStyle(el).fontSize);
     var guard = 0;
-    while (fs > min && guard++ < 60 &&
-           (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)) {
+    /* ★ 必须和**槽盒子**比：.t 的高度是内容撑开的，拿它自己比永远相等（实测踩过） */
+    function tooBig() {
+      return el.scrollHeight > box.clientHeight + 1 || el.scrollWidth > box.clientWidth + 1;
+    }
+    while (fs > min && guard++ < 80 && tooBig()) {
       fs -= 1;
       el.style.fontSize = fs + 'px';
     }
@@ -1175,63 +1179,36 @@ def layout_flow(card, seed):
     if card.get("dashed"):
         parts.append(dash_box(bx - 8, top - 56, bw + 16, bh + 84, seed + 99,
                               card.get("dashed_label")))
-    dom_text = card.get("text") == "dom"     # ★ DOM 文字模式（flow 原型）
+    # ★ flow 的文字**全部走 DOM**（阶段①：迁移完成，SVG 文字分支已删除）。
+    #   为什么删：折行/行数上限/垂直居中/自适应缩放交给浏览器后，孤字、劈词、压框线、
+    #   容量随数量变化这一整类问题都不再是"引擎算出来的" —— 原来那套 wrap_text/fit/
+    #   契约字数上限对 flow 已经没有意义。字体在这里只是"起手字号"，缩多少由 JS 实测决定。
     for i, nd in enumerate(nodes):
         x = bx + i * (w + gap)
         fill = PAL.get(nd.get("fill")) or pal.next()
         parts.append(pen_box(x, top, w, bh, i * 15 + 3, fill))
-        if dom_text:
-            # 只给"框"：标签占框内上半、说明占下半，折行与缩放全交给浏览器
-            _reg_slot(x + 12, top + 12, w - 24, 54, strip_hl(nd.get("text", "")),
-                      SIZES["body"] - 10, clamp=1)
-            if nd.get("desc"):
-                _reg_slot(x + 13, top + 70, w - 26, bh - 84, strip_hl(nd["desc"]),
-                          26, clamp=2, min_size=13)
-        # ★ 节点标签字号**随格宽自适应**。原来写死 42px，而格宽 = (bw-(n-1)*gap)/n：
-        #   5 节点时每格只剩 ~140px（可用宽 116），42px 只放得下 2 个汉字，
-        #   而标签通常是 3~4 个字 → 必然 overflow（实测 9 处 overflow 全在 flow）。
-        #   目标：标准档至少放得下 4 个汉字（放不下再走密集档/折行）。
-        if dom_text:
-            pass                      # 文字已登记为 DOM slot，这里不再画 SVG 文字
-        else:
-            lab_maxw = w - 24
-            lab_fs = max(26, min(SIZES["body"] - 10, int(lab_maxw / 4.0)))
-            parts.append(hl_line(x + w / 2, top + 62,
-                                 parse_hl(nd.get("text", ""), pal, plain=bool(fill)),
-                                 lab_fs, pad=6, align="center", maxw=lab_maxw))
-            if nd.get("desc"):
-                parts.append(txt_block(x + w / 2, top + 118, strip_hl(nd["desc"]), 26,
-                                       w - 26, max_lines=2, tag="flow-d%d" % i,
-                                       align="center"))
+        _reg_slot(x + 12, top + 12, w - 24, 54, strip_hl(nd.get("text", "")),
+                  SIZES["body"] - 10, clamp=1)
+        if nd.get("desc"):
+            _reg_slot(x + 13, top + 70, w - 26, bh - 84, strip_hl(nd["desc"]),
+                      26, clamp=2, min_size=13)
         if i < n - 1:
             parts.append(arrow(x + w, top + bh / 2, x + w + gap, top + bh / 2,
                                "a0", i * 19 + 2))
     y = top + bh + 108
     if card.get("mid"):
-        if dom_text:
-            _reg_slot(0, block_top + 2, W_INNER, mid_h - 6, strip_hl(card["mid"]),
-                      SIZES["note"], clamp=2, min_size=18)
-        else:
-            parts.append(txt(W_INNER / 2, block_top + int(mid_h * 0.45), strip_hl(card["mid"]),
-                             SIZES["note"] + 2, fill=C_NOTE, maxw=W_INNER))
+        _reg_slot(0, block_top + 2, W_INNER, mid_h - 6, strip_hl(card["mid"]),
+                  SIZES["note"], clamp=2, min_size=18)
     if card.get("note"):
-        if dom_text:
-            _reg_slot(0, y - 45, W_INNER, 90, strip_hl(card["note"]),
-                      SIZES["body"] - 6, clamp=2, min_size=20)
-        else:
-            parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note"]),
-                                   SIZES["body"] - 6, W_INNER, max_lines=2, tag="flow-note"))
+        _reg_slot(0, y - 45, W_INNER, 90, strip_hl(card["note"]),
+                  SIZES["body"] - 6, clamp=2, min_size=20)
         # ★ 原来只 += 58：上一条的**末行基线**到下一条的**首行基线**实际只差 9px，
         # 两行字真的叠在一起（几何门实测重叠 6971px²）。
         # 要按"上一条的块高 + 下一条字形上沿"算：0.67×s1（2 行的块半高）+ 1.05×s2 + 0.67×s2 + 10
         y += int(0.67 * (SIZES["body"] - 6) + note_band(SIZES["note"], 2) - 0.67 * SIZES["note"])
     if card.get("note2"):
-        if dom_text:
-            _reg_slot(0, y - 48, W_INNER, 96, strip_hl(card["note2"]),
-                      SIZES["note"], clamp=2, min_size=20)
-        else:
-            parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note2"]),
-                                   SIZES["note"], W_INNER, max_lines=2, tag="flow-note2"))
+        _reg_slot(0, y - 48, W_INNER, 96, strip_hl(card["note2"]),
+                  SIZES["note"], clamp=2, min_size=20)
     bottom = card.get("bottom") or []
     if bottom:
         m = len(bottom)
@@ -1244,19 +1221,11 @@ def layout_flow(card, seed):
             x = bx + i * (cwid + 24)
             parts.append(pen_box(x, by, cwid, 150, i * 23 + 5,
                                  PAL.get(c.get("fill")) or pal.next()))
-            if dom_text:
-                _reg_slot(x + 12, by + 18, cwid - 24, 56, strip_hl(c.get("text", "")),
-                          36, clamp=1, min_size=18)
-                if c.get("desc"):
-                    _reg_slot(x + 13, by + 74, cwid - 26, 64, strip_hl(c["desc"]),
-                              26, clamp=2, min_size=13)
-            else:
-                parts.append(txt(x + cwid / 2, by + 58, strip_hl(c.get("text", "")), 36,
-                                 maxw=cwid - 24, tag="flow-b%d" % i))
-                if c.get("desc"):
-                    parts.append(txt_block(x + cwid / 2, by + 106, strip_hl(c["desc"]), 26,
-                                           cwid - 26, max_lines=2, tag="flow-bd%d" % i,
-                                           align="center"))
+            _reg_slot(x + 12, by + 18, cwid - 24, 56, strip_hl(c.get("text", "")),
+                      36, clamp=1, min_size=18)
+            if c.get("desc"):
+                _reg_slot(x + 13, by + 74, cwid - 26, 64, strip_hl(c["desc"]),
+                          26, clamp=2, min_size=13)
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
             "xmlns='http://www.w3.org/2000/svg'>%s"
