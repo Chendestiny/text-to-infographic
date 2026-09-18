@@ -1,3 +1,13 @@
+---
+name: text-to-infographic
+description: >-
+  Turn a long article into ready-to-publish Xiaohongshu / Instagram carousel cards — a cover plus
+  one page per key point, 3:4 vertical, hand-drawn card style. Deterministic rendering, NOT AI
+  image generation: the text stays crisp, the same spec always yields the same deck, and every page
+  remains hand-editable. 把长文/文章转成小红书竖版图文：封面 + 每页一个要点，脚本渲染、可复现、可手改。
+version: 1.0.0
+---
+
 # text-to-infographic（Agent 手册）
 
 > 一篇长文 → 一套直接能发的小红书图文。你**只出规格、不碰像素**：字号 / 留白 / 描边 / 配色
