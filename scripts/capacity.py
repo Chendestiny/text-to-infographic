@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+"""capacity.py —— 别问契约，直接问引擎：这个槽到底放得下多少字。
+
+为什么需要它：契约里那 81 个手写上限只是**建议值**，真实容量由几何决定
+（可用宽 ÷ 字号，还要看允许几行）。`arch` 的 chip 是活例：契约写 ≤6，
+但 4 个 chip 时每格只有 179px、字号 44 → 真实只放得下约 3.7 个汉字，
+于是"规格门绿、像素门连烧 3 轮"。
+
+做法：把每张卡在内存里渲染一遍（不需要浏览器），读引擎落字时登记的几何
+（`ink._CAPS` = 折行前原文 + 设计字号 + 可用宽 + 行数上限），据此判定：
+
+    ok        标准字号就放得下
+    dense     标准放不下、小一号字（×0.85）放得下 —— 会走密集档，建议改短
+    overflow  连密集档都放不下 —— **必须改短/换版式**（这才是真墙）
+
+用法
+    python scripts/capacity.py spec/xxx.json            # 人读：非 ok 的槽 + 汇总
+    python scripts/capacity.py spec/xxx.json --all      # 连 ok 的也列出来
+    python scripts/capacity.py spec/xxx.json --json     # 机器读（含原始几何）
+"""
+import argparse
+import io
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import ink  # noqa: E402
+
+
+def load_spec(path):
+    raw = io.open(path, encoding="utf-8").read()
+    if path.lower().endswith(".json"):
+        return json.loads(raw)
+    try:
+        import yaml
+    except ImportError:
+        raise SystemExit("读 YAML 需要 pyyaml：pip install pyyaml")
+    return yaml.safe_load(raw)
+
+
+def judge(entry):
+    """按登记到的几何判定一个槽：ok / dense / overflow。"""
+    text, size, maxw = entry["text"], entry["size"], entry["maxw"]
+    max_lines = entry["max_lines"]
+    out = dict(entry)
+    out["w_std"] = round(ink.tw(text, size), 1)
+    out["w_dense"] = round(ink.tw(text, size * ink.DENSE), 1)
+    if max_lines <= 1:
+        out["lines_std"] = out["lines_dense"] = 1
+        fits_std = out["w_std"] <= maxw
+        fits_dense = out["w_dense"] <= maxw
+    else:
+        out["lines_std"] = len(ink.wrap_text(text, size, maxw))
+        out["lines_dense"] = len(ink.wrap_text(text, size * ink.DENSE, maxw))
+        fits_std = out["lines_std"] <= max_lines
+        fits_dense = out["lines_dense"] <= max_lines
+    # 反推"放得下多少字"：纯汉字口径（拉丁按 0.62 折）
+    unit = max(1.0, size * ink.CALIB[0])
+    out["cap_chars"] = int(maxw / unit) * max_lines
+    out["verdict"] = "ok" if fits_std else ("dense" if fits_dense else "overflow")
+    # 严重度：真丢字（多行被截）或缩到不可读（<28px）才算硬；只是变小变挤只提示
+    out["shrink_to"] = size if fits_std else max(20, int(size * maxw / max(1.0, out["w_std"])))
+    if out["verdict"] == "dense":
+        out["severity"] = "warn"
+    elif out["verdict"] == "overflow":
+        if max_lines > 1:
+            out["severity"] = "hard"                      # 会被截成「…」→ 丢内容
+        else:
+            out["severity"] = "hard" if out["shrink_to"] < 28 else "warn"
+    else:
+        out["severity"] = "ok"
+    return out
+
+
+def scan(spec):
+    """逐卡渲染（不启浏览器）→ 读 ink._CAPS → 判定。"""
+    meta = dict(spec.get("meta") or {})
+    cards = spec.get("cards") or []
+    font = "file:///" + os.path.join(ROOT, "assets", "fonts", "ZCOOLKuaiLe-Regular.ttf").replace("\\", "/")
+    pages = []
+    for i, card in enumerate(cards):
+        ink.render_card(card, i, len(cards), meta, font)      # 副作用：填 _CAPS
+        entries = [judge(e) for e in list(ink._CAPS)]
+        pages.append({"page": "card-%02d" % (i + 1), "layout": card.get("layout"),
+                      "slots": entries})
+    return pages
+
+
+def main():
+    ap = argparse.ArgumentParser(description="几何容量：这个槽到底放得下多少字")
+    ap.add_argument("spec")
+    ap.add_argument("--all", action="store_true", help="连放得下的也列出来")
+    ap.add_argument("--json", action="store_true", help="输出 JSON（机器读）")
+    args = ap.parse_args()
+
+    pages = scan(load_spec(args.spec))
+    if args.json:
+        print(json.dumps(pages, ensure_ascii=False, indent=1))
+        return 0
+
+    bad = [s for p in pages for s in p["slots"] if s["verdict"] != "ok"]
+    tight = [s for p in pages for s in p["slots"]
+             if s["verdict"] == "ok" and s["maxw"] and s["w_std"] / s["maxw"] > 0.9]
+    total = sum(len(p["slots"]) for p in pages)
+
+    print("几何容量（%d 页 / %d 个文字槽；不是契约上的建议值，是引擎实测的几何）"
+          % (len(pages), total))
+    print("")
+    if bad:
+        print("★ 标准字号放不下的槽 %d 个：" % len(bad))
+        for p in pages:
+            for s in p["slots"]:
+                if s["verdict"] == "ok":
+                    continue
+                if s["verdict"] == "overflow":
+                    why = ("多行：%d 行 > 上限 %d 行（会被截成「…」）"
+                           % (s["lines_std"], s["max_lines"]) if s["max_lines"] > 1
+                           else "单行超宽 %.0f%%（会被强行缩字）"
+                                % (100 * s["w_std"] / s["maxw"] - 100))
+                    tag = "必须改短" if True else ""
+                else:
+                    why = "小一号字还能放下（走密集档，视觉上略小）"
+                    tag = ""
+                print("  %s(%s)  %-12s [%s] %s｜%s"
+                      % (p["page"], p["layout"], s["tag"], why.split("（")[0],
+                         s["verdict"], s["text"][:30]))
+                print("      注意：%s" % why)
+    else:
+        print("★ 所有槽在标准字号下都放得下 ✓")
+    if tight:
+        print("\n⚠ 已经贴到边（宽度 >90%%）的槽 %d 个，改动文案时留意：" % len(tight))
+        for s in tight[:8]:
+            print("  [%s] %s（%.0f%%）｜%s" % (s["tag"], s["verdict"],
+                                             100 * s["w_std"] / s["maxw"], s["text"][:24]))
+    print("\n口径：ok=%d / dense=%d / overflow=%d（槽位合计 %d）"
+          % (sum(1 for p in pages for s in p["slots"] if s["verdict"] == "ok"),
+             sum(1 for p in pages for s in p["slots"] if s["verdict"] == "dense"),
+             sum(1 for p in pages for s in p["slots"] if s["verdict"] == "overflow"), total))
+    if args.all:
+        print("\n=== 全部槽 ===")
+        for p in pages:
+            for s in p["slots"]:
+                print("  %s %-12s %-8s 宽 %.0f/%.0f 行 %d/%d ｜%s"
+                      % (p["page"], s["tag"], s["verdict"], s["w_std"], s["maxw"],
+                         s["lines_std"], s["max_lines"], s["text"][:26]))
+    return 1 if any(s["verdict"] == "overflow" for s in bad) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
