@@ -1080,7 +1080,26 @@ def layout_flow(card, seed):
     gap = 26
     w = (bw - gap * (n - 1)) // n
     bh = 176
-    top = 170
+
+    # ★ 竖向自适应（实测：flow 页底部空 287px，占画布 32%，九个版式里最空的）
+    #   原来 top 写死 170，而"节点行 + 说明 + 备注"整块远比画布矮。两个要点：
+    #     ① 备注高度按**真实折行数**算 —— 早先按最坏情况（2 行）估，实际都 1 行，
+    #        算出来的 top 只从 170 动到 166，等于没改（这就是第一版白改的原因）；
+    #     ② 余量要**分给节点高度**，光居中填不了空（内容本身就矮）。
+    def _note_h(text, size, max_lines):
+        if not text:
+            return 0
+        lines = min(len(wrap_text(strip_hl(text), size, W_INNER)), max_lines)
+        return int(lines * size * 1.34 + 12)
+
+    notes_h = (_note_h(card.get("note"), SIZES["body"] - 6, 2)
+               + _note_h(card.get("note2"), SIZES["note"], 2))
+    block_h = bh + 108 + notes_h
+    slack = avail - block_h
+    if slack > 60:                       # 有富余就把节点框拔高（上限 90，别撑变形）
+        bh += min(90, int(slack * 0.45))
+        block_h = bh + 108 + notes_h
+    top = max(110, int((avail - block_h) / 2.0))
     parts = [defs("a0")]
     if card.get("dashed"):
         parts.append(dash_box(bx - 8, top - 56, bw + 16, bh + 84, seed + 99,
