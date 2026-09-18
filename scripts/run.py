@@ -41,6 +41,9 @@ def main():
     ap.add_argument("spec")
     ap.add_argument("--article", help="给了就做页数对账")
     ap.add_argument("--out", help="出图目录（默认 spec 所在目录）")
+    ap.add_argument("--budget", action="store_true",
+                    help="顺带打印每槽字数预算表（写文案前用，省一次 capacity.py 调用）")
+    ap.add_argument("--no-render", action="store_true", help="只过门不出图（写规格阶段用）")
     a = ap.parse_args()
 
     spec = os.path.abspath(a.spec)
@@ -74,7 +77,16 @@ def main():
     print("③ 规格门   " + ([l.strip() for l in o.splitlines() if "契约校验" in l]
                             or ["有提示（见下）"])[0])
 
-    o, _ = run("pipeline.py", spec, "-o", out)
+    if a.budget:
+        ob, _ = run("capacity.py", spec, "--budget")
+        for l in ob.splitlines():
+            if "约 " in l or "预算表" in l:
+                print("    " + l.strip())
+    if a.no_render:
+        print("④ 像素门   （--no-render：跳过出图与实测）")
+        o = ""
+    else:
+        o, _ = run("pipeline.py", spec, "-o", out)
     for l in o.splitlines():
         s = l.strip()
         if re.search(r"measure:|verify:|降级 |耗时", s):
@@ -100,10 +112,15 @@ def main():
     except (ValueError, IOError):
         pass
 
-    o, _ = run("review_sheet.py", out)
+    o = ""
+    if not a.no_render:
+        o, _ = run("review_sheet.py", out)
     thumbs = re.search(r"(\d+)x", o)
-    print("⑤ 复核图   " + ([l.strip() for l in o.splitlines() if "真要看观感时" in l]
-                            or ["已生成复核缩略图"])[0][:96])
+    if a.no_render:
+        print("⑤ 复核图   （--no-render：跳过缩略图）")
+    else:
+        print("⑤ 复核图   " + ([l.strip() for l in o.splitlines() if "真要看观感时" in l]
+                                or ["已生成复核缩略图"])[0][:96])
 
     print("\n" + "=" * 64)
     if hard:

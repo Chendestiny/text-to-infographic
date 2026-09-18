@@ -83,10 +83,16 @@ def scan(spec):
     font = "file:///" + os.path.join(ROOT, "assets", "fonts", "ZCOOLKuaiLe-Regular.ttf").replace("\\", "/")
     pages = []
     for i, card in enumerate(cards):
-        ink.render_card(card, i, len(cards), meta, font)      # 副作用：填 _CAPS
+        ink.render_card(card, i, len(cards), meta, font)      # 副作用：填 _CAPS / _SLOTS
         entries = [judge(e) for e in list(ink._CAPS)]
+        # DOM 槽（flow/chain/compare 已迁移）：它们的"预算"就是槽尺寸 + 起手字号，
+        # 缩多少由浏览器的 autofit 实测决定 —— 不在这里估算
+        dom = [{"tag": "dom", "text": sl["text"], "size": sl["size"], "maxw": sl["w"],
+                "max_lines": sl["clamp"], "verdict": "dom", "cap_chars": 0,
+                "w_std": 0, "lines_std": 0, "w": sl["w"], "h": sl["h"]}
+               for sl in list(ink._SLOTS)]
         pages.append({"page": "card-%02d" % (i + 1), "layout": card.get("layout"),
-                      "slots": entries})
+                      "slots": entries, "dom": dom})
     return pages
 
 
@@ -154,6 +160,16 @@ def main():
                      s["maxw"], s["text"][:22]))
         print("  提示：表中的字数是**建议值**；标准字号放不下就会走密集档（小一号字），"
               "再放不下才必须改短。")
+
+        doms = [d for p in pages for d in (p.get("dom") or [])]
+        if doms:
+            print("\n=== DOM 文字槽（已迁移版式：折行/缩放由浏览器负责，这里只给槽尺寸）===")
+            doms.sort(key=lambda d: d["w"])
+            for d in doms[:18]:
+                print("     槽 %4.0fx%-4.0f 起手字号 %2d 最多 %d 行  ｜%s"
+                      % (d["w"], d["h"], d["size"], d["max_lines"], d["text"][:24]))
+            if len(doms) > 18:
+                print("     …共 %d 个槽（只列最窄的 18 个）" % len(doms))
 
     if args.all:
         print("\n=== 全部槽 ===")

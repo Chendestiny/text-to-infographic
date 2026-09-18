@@ -15,14 +15,18 @@ version: 1.0.0
 
 **四条命令就是全部工具面**（先看这张表，细节按需查）：
 
-| 什么时候用 | 命令 | 它给你什么 |
-|---|---|---|
-| ① 决定拆几页 | `python scripts/plan.py <文章.md>` | 页数建议 + 区间 + **每页骨架** + 可直接粘贴的 `meta.plan` |
-| ② 交付（一条命令全包） | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` | 预检 + 页数对账 + 规格门 + 像素门/几何门 + 复核缩略图 + **一句结论** |
-| ③ 写文案前看预算（可选） | `python scripts/capacity.py <spec.json> --budget` | 每槽能放几个汉字（按真实几何算） |
+**只有两条命令，别分头跑**（实测：分头跑 validate/pipeline/preflight/capacity 会让一轮多出
+20+ 次调用，全花在"自己拼输出"上）：
 
-**四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 / 几何布局门），一条命令跑完就叫"过门"，
-不要再分头跑 —— 实测分头跑会让一轮多出 20+ 次命令调用。
+| 什么时候用 | 命令 |
+|---|---|
+| ① 决定拆几页（**只跑一次**） | `python scripts/plan.py <文章.md>` → 页数 + 区间 + 每页骨架 + 可直接粘贴的 `meta.plan` |
+| ② 写规格阶段 | `python scripts/run.py <spec.json> --budget --no-render` → 每槽字数预算 + 预检 + 规格门 |
+| ③ 交付 | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` → 预检 + 页数对账 + 规格门 + 像素门/几何门 + 出图 + 复核缩略图 + **一句结论** |
+
+**四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 / 几何布局门）。
+**不要在 run.py 之外单独跑 validate.py / pipeline.py / preflight.py** —— 它们的结果全都已经并在
+run.py 的结论里，重复跑只是多烧时间。
 
 ---
 
@@ -53,8 +57,9 @@ python scripts/plan.py <文章.md> --check <spec.json>
 
 
 **第 3 步 · 写规格**：从 [examples/](examples/) 抄一个形状再改文案。
-**先把骨架写成规格（版式与条数定了、文案留空）跑一次预算表**：`capacity.py <骨架.json> --budget`
-—— 一眼看到每槽能放几个汉字。实测这一步能把 4 轮返工压到 1 轮。
+**先把骨架写成规格（版式与条数定了、文案留空）跑一次**：
+`python scripts/run.py <骨架.json> --budget --no-render` —— 一眼看到每槽能放几个汉字 + 预检结论。
+实测这一步能把 4 轮返工压到 1 轮；**文字放不下由引擎自己缩字号兜住，不用为它反复改文案**。
 
 
 - 版式字段表在 [docs/layouts.md](docs/layouts.md)，开头还有一张**字段支持总表**
