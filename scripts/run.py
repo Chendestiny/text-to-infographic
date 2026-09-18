@@ -83,6 +83,22 @@ def main():
         if s.startswith("[") and re.search(r"缩到|密集档|截断", s):
             soft.append(s)
 
+    # ★ 逐页文字体检表：把"四道门已经量过每一页"这件事用文字摊开。
+    #   为什么需要：agent 会拿看图当验证手段（实测一轮 8 次、占 68% 墙钟），
+    #   文档说不看它也会看；把结论给足，它才没有理由再去花那 40~250 秒。
+    import json as _json
+    try:
+        _spec = _json.load(io.open(spec, encoding="utf-8"))
+        _bad = " ".join(hard)
+        print("  逐页：", end="")
+        for i, _c in enumerate(_spec.get("cards") or [], 1):
+            tag = "card-%02d" % i
+            mark = "✗" if tag in _bad else "✓"
+            print("%s%s " % (mark, tag.replace("card-", "")), end="")
+        print("（✓ = 该页四道门全过：无溢出/越界/压框/压线/重叠/孤字/断词/截断）")
+    except (ValueError, IOError):
+        pass
+
     o, _ = run("review_sheet.py", out)
     thumbs = re.search(r"(\d+)x", o)
     print("⑤ 复核图   " + ([l.strip() for l in o.splitlines() if "真要看观感时" in l]
@@ -95,8 +111,9 @@ def main():
             print("   " + h)
     else:
         print("✓ 硬问题 0 处 —— 可以交付。")
-        print("  下一页要做的是**看图**：如果是审美抽查，最多看 1~2 张 review/thumb/；")
-        print("  文字类毛病（孤字/断词/数量词/压框）四道门已经量过了，不用再看。")
+        print("  **不必再看图**：文字类毛病（溢出/越界/压框/压线/重叠/孤字/断词/数量词/截断）")
+        print("  四道门已逐页量过（见上面的逐页表）。看图只对'配色疏密'这类主观项有意义，")
+        print("  单次 40~250 秒 —— 想看就只看 1 张封面，并在报告里注明'审美已抽查 1 张'。")
     if soft:
         print("· 引擎自己兜住的妥协（%d 处，无需改文案）：" % len(soft))
         for s in soft[:6]:
