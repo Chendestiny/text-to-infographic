@@ -17,6 +17,7 @@
     python scripts/capacity.py spec/xxx.json            # 人读：非 ok 的槽 + 汇总
     python scripts/capacity.py spec/xxx.json --all      # 连 ok 的也列出来
     python scripts/capacity.py spec/xxx.json --json     # 机器读（含原始几何）
+    python scripts/capacity.py spec/xxx.json --budget   # 每槽字数预算表（**写文案前**先看）
 """
 import argparse
 import io
@@ -93,6 +94,8 @@ def main():
     ap = argparse.ArgumentParser(description="几何容量：这个槽到底放得下多少字")
     ap.add_argument("spec")
     ap.add_argument("--all", action="store_true", help="连放得下的也列出来")
+    ap.add_argument("--budget", action="store_true",
+                    help="打印每槽字数预算表（写文案之前先看这个，别写完才发现放不下）")
     ap.add_argument("--json", action="store_true", help="输出 JSON（机器读）")
     args = ap.parse_args()
 
@@ -139,6 +142,19 @@ def main():
           % (sum(1 for p in pages for s in p["slots"] if s["verdict"] == "ok"),
              sum(1 for p in pages for s in p["slots"] if s["verdict"] == "dense"),
              sum(1 for p in pages for s in p["slots"] if s["verdict"] == "overflow"), total))
+    if args.budget:
+        print("\n=== 每槽字数预算表（写文案前先看；越紧的越在上面）===")
+        print("    汉字口径：1 个汉字 = 1em，拉丁字母约 0.62em；行数按允许的最大行数算")
+        rows = [s for p in pages for s in p["slots"]]
+        rows.sort(key=lambda s: s["cap_chars"])
+        for s in rows:
+            tight = "紧" if s["maxw"] and s["w_std"] / s["maxw"] > 0.9 else "  "
+            print("  %s %-11s 约 %3d 字 / %d 行  字号 %2d  可用宽 %4.0f  ｜%s"
+                  % (tight, s["tag"], s["cap_chars"], s["max_lines"], s["size"],
+                     s["maxw"], s["text"][:22]))
+        print("  提示：表中的字数是**建议值**；标准字号放不下就会走密集档（小一号字），"
+              "再放不下才必须改短。")
+
     if args.all:
         print("\n=== 全部槽 ===")
         for p in pages:
