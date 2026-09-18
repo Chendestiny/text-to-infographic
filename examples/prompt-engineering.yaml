@@ -40,7 +40,7 @@ cards:
         - {text: 只输出 schema 字段, fill: yellow}
         - 同一动作最多 3 次
         - {text: 结论必须附来源字段, fill: blue}
-      note: "「不要」只留给绝对红线"
+      note: "「不要」只给红线"
 
   - layout: compare
     title: 思维链 CoT
@@ -94,6 +94,6 @@ cards:
     nodes:
       - {text: 版本管理,      desc: 配置化 + 热加载}
       - {text: 可追溯, fill: yellow}
-      - {text: 固定问题集,    desc: "20 个典型用例"}
+      - {text: 固定问题集,    desc: "20 个用例"}
       - {text: 回归对比,      fill: blue}
     note: 没有回归，改提示词就是蒙眼开盲盒

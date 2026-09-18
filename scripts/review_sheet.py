@@ -40,10 +40,13 @@ def label_font(size):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="复核用缩略图 + 拼版图")
+    ap = argparse.ArgumentParser(description="复核用缩略图（拼版可选，更慢）")
     ap.add_argument("out_dir", help="出图目录（里面是 card-*.png）")
     ap.add_argument("--thumb", type=int, default=720, help="缩略图宽度（默认 720）")
-    ap.add_argument("--per-sheet", type=int, default=4, help="每张拼版放几张（默认 4）")
+    ap.add_argument("--sheet", action="store_true",
+                    help="额外生成拼版图。⚠ 实测拼版（1488×2056）一次视觉调用 >600s 未返回，"
+                         "而 720px 单张 ≈103s —— 成本随像素面积走，默认不生成")
+    ap.add_argument("--per-sheet", type=int, default=4, help="拼版每张放几张（仅在 --sheet 时）")
     ap.add_argument("--quality", type=int, default=88, help="JPEG 质量（默认 88）")
     a = ap.parse_args()
 
@@ -71,7 +74,7 @@ def main():
     pad, bar = 16, 44
     font = label_font(30)
     sheets = []
-    for si in range(0, len(thumbs), per):
+    for si in range(0, len(thumbs), per) if a.sheet else []:
         chunk = thumbs[si:si + per]
         rows = (len(chunk) + cols - 1) // cols
         W = cols * tw + (cols + 1) * pad
@@ -93,10 +96,13 @@ def main():
     tot_orig = sum(os.path.getsize(p) for p in cards) / 1048576.0
     tot_thumb = sum(os.path.getsize(os.path.join(tdir, n + ".jpg")) for n, _ in thumbs) / 1048576.0
     tot_sheet = sum(os.path.getsize(p) for p in sheets) / 1048576.0
-    print("\n原图 %.1f MB → 缩略图 %.2f MB / 拼版 %.2f MB" % (tot_orig, tot_thumb, tot_sheet))
-    print("把 %s 交给看图模型：**一次分析 %d 张**，只问四类毛病（断词 / 孤字 / 压字出框 / 数量词），"
-          "别让它写图像描述。" % (sdir.replace("\\", "/") + "/sheet-*.jpg", per))
-    print("需要细看某一张时再单独给 review/thumb/card-XX.jpg。")
+    print("\n原图 %.1f MB → 缩略图 %.2f MB%s" % (tot_orig, tot_thumb,
+          " / 拼版 %.2f MB" % tot_sheet if sheets else ""))
+    print("优先做文字级预检：`python scripts/preflight.py <spec.json>` —— 孤字/断词/数量词"
+          "三类**不需要看图**，0 秒 0 token。")
+    print("真要看观感时：抽查 1~2 张 %s/card-XX.jpg 就够（实测 720px 单张一次视觉调用 ≈103 秒，"
+          "拼版更慢）。**别逐张全看、改完文案也不用重新看图**。"
+          % (tdir.replace("\\", "/")))
 
 
 if __name__ == "__main__":
