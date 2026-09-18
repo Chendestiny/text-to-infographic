@@ -1094,12 +1094,21 @@ def layout_flow(card, seed):
 
     notes_h = (_note_h(card.get("note"), SIZES["body"] - 6, 2)
                + _note_h(card.get("note2"), SIZES["note"], 2))
-    block_h = bh + 108 + notes_h
+    # ★ mid（顶部灰色说明）原来写死 y=104，而节点区的 top 是自适应的 ——
+    #   两者相撞：实测文字 y=62~114 与方框 y=108 起重叠（crosses-box）。
+    #   现在它也纳入块高：先算整块（mid + 节点行 + 备注 + bottom），再统一居中。
+    mid_h = int(SIZES["note"] * 1.34) + 26 if card.get("mid") else 0
+    # ★ bottom（底部那排小框）必须**参与块高计算**，不能写死 y=700：
+    #   节点区和备注是自适应的，写死坐标一定会在某组参数下相撞。
+    has_bottom = bool(card.get("bottom"))
+    bottom_h = 190 if has_bottom else 0
+    block_h = mid_h + bh + 108 + notes_h + bottom_h
     slack = avail - block_h
     if slack > 60:                       # 有富余就把节点框拔高（上限 90，别撑变形）
         bh += min(90, int(slack * 0.45))
-        block_h = bh + 108 + notes_h
-    top = max(110, int((avail - block_h) / 2.0))
+        block_h = mid_h + bh + 108 + notes_h + bottom_h
+    block_top = max(24, int((avail - block_h) / 2.0))
+    top = block_top + mid_h
     parts = [defs("a0")]
     if card.get("dashed"):
         parts.append(dash_box(bx - 8, top - 56, bw + 16, bh + 84, seed + 99,
@@ -1126,8 +1135,8 @@ def layout_flow(card, seed):
                                "a0", i * 19 + 2))
     y = top + bh + 108
     if card.get("mid"):
-        parts.append(txt(W_INNER / 2, 104, strip_hl(card["mid"]), SIZES["note"] + 2,
-                         fill=C_NOTE, maxw=W_INNER))
+        parts.append(txt(W_INNER / 2, block_top + int(mid_h * 0.45), strip_hl(card["mid"]),
+                         SIZES["note"] + 2, fill=C_NOTE, maxw=W_INNER))
     if card.get("note"):
         parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note"]),
                                SIZES["body"] - 6, W_INNER, max_lines=2, tag="flow-note"))
@@ -1141,15 +1150,19 @@ def layout_flow(card, seed):
     bottom = card.get("bottom") or []
     if bottom:
         m = len(bottom)
+        # y 由内容推出来（备注之下 30px），不再写死 700；越界时贴底兜底
+        by = top + bh + 108 + notes_h + 30
+        if by + 150 > avail - 10:
+            by = max(110, avail - 160)
         cwid = (bw - (m - 1) * 24) // m
         for i, c in enumerate(bottom):
             x = bx + i * (cwid + 24)
-            parts.append(pen_box(x, 700, cwid, 150, i * 23 + 5,
+            parts.append(pen_box(x, by, cwid, 150, i * 23 + 5,
                                  PAL.get(c.get("fill")) or pal.next()))
-            parts.append(txt(x + cwid / 2, 758, strip_hl(c.get("text", "")), 36,
+            parts.append(txt(x + cwid / 2, by + 58, strip_hl(c.get("text", "")), 36,
                              maxw=cwid - 24, tag="flow-b%d" % i))
             if c.get("desc"):
-                parts.append(txt_block(x + cwid / 2, 806, strip_hl(c["desc"]), 26,
+                parts.append(txt_block(x + cwid / 2, by + 106, strip_hl(c["desc"]), 26,
                                        cwid - 26, max_lines=2, tag="flow-bd%d" % i,
                                        align="center"))
     parts.append("</svg>")
