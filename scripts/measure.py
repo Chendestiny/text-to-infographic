@@ -306,6 +306,33 @@ def analyze(rep, boxes=None, texts=None, ink=None):
                            "note": "DOM 槽放不下：内容 %dpx 高 / 容器 %dpx（字号 %s，已缩到下限）"
                                    % (sl.get("sh", 0), sl.get("ch", 0), sl.get("fs"))})
 
+    # ---- DOM 文字也参与几何求交（与 SVG 文字对等）----
+    # 原来几何门只看 rep.svg（SVG <text>），DOM 文字不在里面 → "压框线/两段压住"反而没人管。
+    dom_rects = [(sl["left"], sl["top"], sl["w"], sl["h"], sl.get("text", ""))
+                 for sl in (rep.get("slots") or [])]
+    if ink and dom_rects:
+        for (dx, dy, dw, dh, dtext) in dom_rects:
+            for k in ink:
+                if k["kind"] == "line" and _overlap((dx, dy, dw, dh), k) > 4:
+                    issues.append({"kind": "crosses-line", "tag": "dom", "text": dtext[:30],
+                                   "note": "DOM 文字压到箭头/连线"})
+                # 侵入深度判据：文字从上方/下方真的"扎进"方框多少像素。
+                # 原来用"文字的顶边是否高于框顶 4px"会把"整体在框外、只擦到 1px"也算穿框
+                # （实测 mid 与手绘笔锋 overshoot 就是这么误报的）。真穿框是 20px+ 量级。
+                elif k["kind"] == "box" and _overlap((dx, dy, dw, dh), k) > 4 \
+                        and ((k["y"] - (dy + dh)) if dy < k["y"]
+                             else ((dy + dh) - (k["y"] + k["h"]))) > 4:
+                    issues.append({"kind": "crosses-box", "tag": "dom", "text": dtext[:30],
+                                   "note": "DOM 文字纵向穿出方框（框 y=%.0f~%.0f，文字 y=%.0f~%.0f）"
+                                           % (k["y"], k["y"] + k["h"], dy, dy + dh)})
+    for i in range(len(dom_rects)):
+        for j in range(i + 1, len(dom_rects)):
+            a, b = dom_rects[i], dom_rects[j]
+            ov = _overlap((a[0], a[1], a[2], a[3]), {"x": b[0], "y": b[1], "w": b[2], "h": b[3]})
+            if ov > 4 and ov > 0.08 * max(1.0, min(a[2] * a[3], b[2] * b[3])):
+                issues.append({"kind": "overlap", "tag": "dom", "text": b[4][:30],
+                               "note": "两段 DOM 文字互相压住：%r × %r" % (a[4][:12], b[4][:12])})
+
     # ---- 几何布局门：rect 求交（第四道门）----
     # 视觉复核里"压字 / 压线 / 压框"这几类，本质都是包围盒相交，用 rect 量比看图准且免费。
     svg = rep.get("svg", [])

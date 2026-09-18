@@ -74,8 +74,11 @@ def _reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weig
 # DOM 文字的样式：折行、行数上限（line-clamp）、垂直居中全靠 CSS ；
 # 高亮继续用基础 CSS 里已有的 .hl（蜡笔质感 ::before），DOM 模式下不降级
 DOM_SLOT_CSS = """
-.stagewrap { position: relative; }
-.stagewrap > svg.stage { display: block; }
+/* ★ 坐标系必须同源：.stage 原本自带 margin-top:44px，而 margin 在元素**外面**，
+   覆盖层从 wrapper 的内容盒起算 → DOM 文字整体比 SVG 内容高 44px（实测标签压在方框顶边上）。
+   把 margin 移到 wrapper，stage 归零 —— 两个坐标系就重合了。 */
+.stagewrap { position: relative; margin-top: 44px; }
+.stagewrap > svg.stage { display: block; margin-top: 0; }
 .slots { position: absolute; inset: 0; }
 .slots .s { position: absolute; display: flex; align-items: center; justify-content: center; }
 .slots .s.left { justify-content: flex-start; }
