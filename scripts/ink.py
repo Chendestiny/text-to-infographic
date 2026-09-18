@@ -59,6 +59,53 @@ _TEXTS = []
 # 只能算"建议值"，真实能不能放下由几何说话（capacity.py / 规格门都用这份登记）。
 _CAPS = []
 _INK = []          # 墨迹包围盒（箭头/外框/方框），供几何布局门做求交
+# DOM 文字模式的文字槽：文字交给浏览器排版，引擎只给"框在哪、多大、最多几行"
+# （用户架构方向：折行/省略/垂直居中/自适应缩放都是前端的事，不该用 Python 估算）
+_SLOTS = []
+
+
+def _reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weight=None):
+    """登记一个 DOM 文字槽：位置 + 尺寸 + 字号 + 行数上限，其余交给浏览器。"""
+    _SLOTS.append({"x": float(x), "y": float(y), "w": float(w), "h": float(h),
+                   "text": str(text), "size": int(size), "clamp": int(clamp),
+                   "align": align, "min": int(min_size), "weight": weight})
+
+
+# DOM 文字的样式：折行、行数上限（line-clamp）、垂直居中全靠 CSS ；
+# 高亮继续用基础 CSS 里已有的 .hl（蜡笔质感 ::before），DOM 模式下不降级
+DOM_SLOT_CSS = """
+.stagewrap { position: relative; }
+.stagewrap > svg.stage { display: block; }
+.slots { position: absolute; inset: 0; }
+.slots .s { position: absolute; display: flex; align-items: center; justify-content: center; }
+.slots .s.left { justify-content: flex-start; }
+.slots .t {
+  overflow-wrap: anywhere; word-break: break-word; line-height: 1.26; text-align: center;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--clamp, 2);
+  overflow: hidden; color: %C_TEXT%; font-family: %FONT%;
+}
+.slots .s.left .t { text-align: left; }
+"""
+
+# 自适应缩放：浏览器实测 scrollHeight/clientHeight → 缩字号到刚好放下。
+# 这一条替代了原来的 wrap_text 估算 + CALIB 校准 + textLength 注入 + 契约字数上限。
+DOM_AUTOFIT_JS = """
+<script>
+(function () {
+  document.querySelectorAll('.slots .s .t').forEach(function (el) {
+    var min = parseFloat(el.dataset.min || '15');
+    var fs = parseFloat(getComputedStyle(el).fontSize);
+    var guard = 0;
+    while (fs > min && guard++ < 60 &&
+           (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)) {
+      fs -= 1;
+      el.style.fontSize = fs + 'px';
+    }
+    el.dataset.fitted = fs;
+  });
+})();
+</script>
+"""
 DENSE = 0.85        # 密集档字号系数：M~P 之间放得下的文案，用这一档渲染
 
 
@@ -426,7 +473,9 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
         # ★ 多档缩小：小一号不行就再小，直到塞进原定行数 —— **绝不轻易截断**。
         #   为什么要有这个循环：截断 = 丢字 = 必须让 LLM 改文案重跑（实测平均 4 轮）。
         #   而"字小一点"只是观感问题，会在降级报告里点名，不该换来一轮 LLM。
-        for tier in (0.85, 0.78, 0.72, 0.66, 0.60):
+        # 档位加深到 0.42：实测 2 行的槽在 0.42 时容量约翻倍，正常文案不可能再截断。
+        # 用户的判断是对的 —— 这是前端/引擎的活，不该把"缩字号"丢回 LLM 改文案。
+        for tier in (0.85, 0.78, 0.72, 0.66, 0.60, 0.54, 0.48, 0.42):
             dsize = int(size * tier)
             dlines = wrap_text(s, dsize, maxw)
             if len(dlines) <= max_lines:
@@ -1122,40 +1171,63 @@ def layout_flow(card, seed):
     if card.get("dashed"):
         parts.append(dash_box(bx - 8, top - 56, bw + 16, bh + 84, seed + 99,
                               card.get("dashed_label")))
+    dom_text = card.get("text") == "dom"     # ★ DOM 文字模式（flow 原型）
     for i, nd in enumerate(nodes):
         x = bx + i * (w + gap)
         fill = PAL.get(nd.get("fill")) or pal.next()
         parts.append(pen_box(x, top, w, bh, i * 15 + 3, fill))
+        if dom_text:
+            # 只给"框"：标签占框内上半、说明占下半，折行与缩放全交给浏览器
+            _reg_slot(x + 12, top + 12, w - 24, 54, strip_hl(nd.get("text", "")),
+                      SIZES["body"] - 10, clamp=1)
+            if nd.get("desc"):
+                _reg_slot(x + 13, top + 70, w - 26, bh - 84, strip_hl(nd["desc"]),
+                          26, clamp=2, min_size=13)
         # ★ 节点标签字号**随格宽自适应**。原来写死 42px，而格宽 = (bw-(n-1)*gap)/n：
         #   5 节点时每格只剩 ~140px（可用宽 116），42px 只放得下 2 个汉字，
         #   而标签通常是 3~4 个字 → 必然 overflow（实测 9 处 overflow 全在 flow）。
         #   目标：标准档至少放得下 4 个汉字（放不下再走密集档/折行）。
-        lab_maxw = w - 24
-        lab_fs = max(26, min(SIZES["body"] - 10, int(lab_maxw / 4.0)))
-        parts.append(hl_line(x + w / 2, top + 62,
-                             parse_hl(nd.get("text", ""), pal, plain=bool(fill)),
-                             lab_fs, pad=6, align="center", maxw=lab_maxw))
-        if nd.get("desc"):
-            parts.append(txt_block(x + w / 2, top + 118, strip_hl(nd["desc"]), 26,
-                                   w - 26, max_lines=2, tag="flow-d%d" % i,
-                                   align="center"))
+        if dom_text:
+            pass                      # 文字已登记为 DOM slot，这里不再画 SVG 文字
+        else:
+            lab_maxw = w - 24
+            lab_fs = max(26, min(SIZES["body"] - 10, int(lab_maxw / 4.0)))
+            parts.append(hl_line(x + w / 2, top + 62,
+                                 parse_hl(nd.get("text", ""), pal, plain=bool(fill)),
+                                 lab_fs, pad=6, align="center", maxw=lab_maxw))
+            if nd.get("desc"):
+                parts.append(txt_block(x + w / 2, top + 118, strip_hl(nd["desc"]), 26,
+                                       w - 26, max_lines=2, tag="flow-d%d" % i,
+                                       align="center"))
         if i < n - 1:
             parts.append(arrow(x + w, top + bh / 2, x + w + gap, top + bh / 2,
                                "a0", i * 19 + 2))
     y = top + bh + 108
     if card.get("mid"):
-        parts.append(txt(W_INNER / 2, block_top + int(mid_h * 0.45), strip_hl(card["mid"]),
-                         SIZES["note"] + 2, fill=C_NOTE, maxw=W_INNER))
+        if dom_text:
+            _reg_slot(0, block_top + 2, W_INNER, mid_h - 6, strip_hl(card["mid"]),
+                      SIZES["note"], clamp=2, min_size=18)
+        else:
+            parts.append(txt(W_INNER / 2, block_top + int(mid_h * 0.45), strip_hl(card["mid"]),
+                             SIZES["note"] + 2, fill=C_NOTE, maxw=W_INNER))
     if card.get("note"):
-        parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note"]),
-                               SIZES["body"] - 6, W_INNER, max_lines=2, tag="flow-note"))
+        if dom_text:
+            _reg_slot(0, y - 45, W_INNER, 90, strip_hl(card["note"]),
+                      SIZES["body"] - 6, clamp=2, min_size=20)
+        else:
+            parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note"]),
+                                   SIZES["body"] - 6, W_INNER, max_lines=2, tag="flow-note"))
         # ★ 原来只 += 58：上一条的**末行基线**到下一条的**首行基线**实际只差 9px，
         # 两行字真的叠在一起（几何门实测重叠 6971px²）。
         # 要按"上一条的块高 + 下一条字形上沿"算：0.67×s1（2 行的块半高）+ 1.05×s2 + 0.67×s2 + 10
         y += int(0.67 * (SIZES["body"] - 6) + note_band(SIZES["note"], 2) - 0.67 * SIZES["note"])
     if card.get("note2"):
-        parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note2"]),
-                               SIZES["note"], W_INNER, max_lines=2, tag="flow-note2"))
+        if dom_text:
+            _reg_slot(0, y - 48, W_INNER, 96, strip_hl(card["note2"]),
+                      SIZES["note"], clamp=2, min_size=20)
+        else:
+            parts.append(txt_block(W_INNER / 2, y, strip_hl(card["note2"]),
+                                   SIZES["note"], W_INNER, max_lines=2, tag="flow-note2"))
     bottom = card.get("bottom") or []
     if bottom:
         m = len(bottom)
@@ -1168,12 +1240,19 @@ def layout_flow(card, seed):
             x = bx + i * (cwid + 24)
             parts.append(pen_box(x, by, cwid, 150, i * 23 + 5,
                                  PAL.get(c.get("fill")) or pal.next()))
-            parts.append(txt(x + cwid / 2, by + 58, strip_hl(c.get("text", "")), 36,
-                             maxw=cwid - 24, tag="flow-b%d" % i))
-            if c.get("desc"):
-                parts.append(txt_block(x + cwid / 2, by + 106, strip_hl(c["desc"]), 26,
-                                       cwid - 26, max_lines=2, tag="flow-bd%d" % i,
-                                       align="center"))
+            if dom_text:
+                _reg_slot(x + 12, by + 18, cwid - 24, 56, strip_hl(c.get("text", "")),
+                          36, clamp=1, min_size=18)
+                if c.get("desc"):
+                    _reg_slot(x + 13, by + 74, cwid - 26, 64, strip_hl(c["desc"]),
+                              26, clamp=2, min_size=13)
+            else:
+                parts.append(txt(x + cwid / 2, by + 58, strip_hl(c.get("text", "")), 36,
+                                 maxw=cwid - 24, tag="flow-b%d" % i))
+                if c.get("desc"):
+                    parts.append(txt_block(x + cwid / 2, by + 106, strip_hl(c["desc"]), 26,
+                                           cwid - 26, max_lines=2, tag="flow-bd%d" % i,
+                                           align="center"))
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
             "xmlns='http://www.w3.org/2000/svg'>%s"
@@ -1577,7 +1656,27 @@ def render_card(card, idx, total, meta, font_url):
     _TEXTS.clear()
     _CAPS.clear()
     _INK.clear()
+    _SLOTS.clear()
     body = LAYOUTS[layout](card, idx * 17 + 7)
+    dom_slots = ""
+    dom_js = ""
+    if _SLOTS:
+        # DOM 文字模式：墨迹照旧是 stage SVG，文字是绝对定位的 HTML，
+        # 与 stage 同一坐标系（stagewrap 相对定位 → slots 覆盖在上面）
+        items = []
+        for s in _SLOTS:
+            cls = "s left" if s["align"] == "left" else "s"
+            wgt = "font-weight:%s;" % s["weight"] if s["weight"] else ""
+            items.append(
+                "<div class='%s' style='left:%.1fpx;top:%.1fpx;width:%.1fpx;height:%.1fpx;"
+                "--clamp:%d'>"
+                "<div class='t' data-min='%d' style='font-size:%dpx;%s'>%s</div></div>"
+                % (cls, s["x"], s["y"], s["w"], s["h"], s["clamp"], s["min"], s["size"],
+                   wgt, _inline(s["text"])))
+        dom_slots = "<div class='slots'>%s</div>" % "".join(items)
+        dom_js = DOM_AUTOFIT_JS
+        _reg_text(" ".join(s["text"] for s in _SLOTS))      # 内容门照样登记
+        body = "<div class='stagewrap'>%s%s</div>" % (body, dom_slots)
     sub = _sub(card.get("subtitle", ""))
     h1 = h1_html(card.get("title", ""))
     foot = meta.get("footer", "")
@@ -1604,6 +1703,11 @@ def render_card(card, idx, total, meta, font_url):
     css = CSS
     for k, v in repl:
         css = css.replace(k, v)
+    if _SLOTS:                       # DOM 文字模式的样式（占位符与主 CSS 同一套替换）
+        _dcss = DOM_SLOT_CSS
+        for k, v in repl:
+            _dcss = _dcss.replace(k, v)
+        css += _dcss
 
     # ★ manifest 必须最后算：上面每个渲染函数都会 _reg_text 登记文字，
     # 早算一步就漏掉后发生的那批（踩过：算在 _sub 之前 → 副标题没进清单，
@@ -1622,5 +1726,5 @@ def render_card(card, idx, total, meta, font_url):
 %s
 %s
 %s
-</div></body></html>""" % (css, cls, manifest, frame_overlay(kind, 4200 + idx),
-                           deco, h1, sub, body, foot_html))
+</div>%s</body></html>""" % (css, cls, manifest, frame_overlay(kind, 4200 + idx),
+                           deco, h1, sub, body, foot_html, dom_js))

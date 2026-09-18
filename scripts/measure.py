@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 
 MEASURE_FN = """(function(){
-  var rep = {svg: [], html: [], ink: [], stage: null, card: null};
+  var rep = {svg: [], html: [], ink: [], slots: [], stage: null, card: null};
   var stage = document.querySelector('.stage');
   if (stage) {
     var vb = stage.viewBox.baseVal;
@@ -71,6 +71,33 @@ MEASURE_FN = """(function(){
   }
   var fr = document.querySelector('.frame');
   if (fr) { pushInk(fr, 'frame'); }
+  /* DOM 文字槽：真实渲染坐标 + 是否溢出（scrollHeight/clientHeight）
+     —— DOM 模式下这就是"文字放不下"的权威判据，不用估算宽度。 */
+  rep.slots = [];
+  var wraps = document.querySelector('.stagewrap') || stage;
+  var wr0 = wraps ? wraps.getBoundingClientRect() : null;
+  var slots = document.querySelectorAll('.slots .s');
+  for (var si = 0; si < slots.length; si++) {
+    var el = slots[si], tr = el.getBoundingClientRect();
+    var t = el.querySelector('.t');
+    var cs = t ? getComputedStyle(t) : null;
+    var over = false;
+    if (t) {
+      var clamp = t.style.webkitLineClamp;
+      t.style.webkitLineClamp = 'unset';                 /* 先解除截断才能量到真实高度 */
+      over = (t.scrollHeight > el.clientHeight + 1) || (t.scrollWidth > el.clientWidth + 1);
+      t.style.webkitLineClamp = clamp;
+    }
+    rep.slots.push({
+      left: wr0 ? +(tr.left - wr0.left).toFixed(1) : 0,
+      top: wr0 ? +(tr.top - wr0.top).toFixed(1) : 0,
+      w: +tr.width.toFixed(1), h: +tr.height.toFixed(1),
+      text: t ? (t.textContent || '').slice(0, 30) : '',
+      fs: cs ? parseFloat(cs.fontSize) : 0,
+      sh: t ? t.scrollHeight : 0, ch: t ? t.clientHeight : 0,
+      over: over
+    });
+  }
   var rows = document.querySelectorAll('.row');
   for (var j = 0; j < rows.length; j++) {
     var r = rows[j], b = r.getBoundingClientRect();
@@ -265,6 +292,14 @@ def analyze(rep, boxes=None, texts=None, ink=None):
         if h["sw"] > h["cw"] + 2:
             issues.append({"kind": "html-overflow", "text": h["s"],
                            "sw": h["sw"], "cw": h["cw"]})
+    # ---- DOM 文字槽：浏览器实测的溢出（DOM 模式下最权威的一类）----
+    for sl in rep.get("slots") or []:
+        if sl.get("over"):
+            issues.append({"kind": "dom-overflow", "tag": "dom",
+                           "text": sl.get("text", "")[:30],
+                           "note": "DOM 槽放不下：内容 %dpx 高 / 容器 %dpx（字号 %s）"
+                                   % (sl.get("sh", 0), sl.get("ch", 0), sl.get("fs"))})
+
     # ---- 几何布局门：rect 求交（第四道门）----
     # 视觉复核里"压字 / 压线 / 压框"这几类，本质都是包围盒相交，用 rect 量比看图准且免费。
     svg = rep.get("svg", [])
