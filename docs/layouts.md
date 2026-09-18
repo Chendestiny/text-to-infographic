@@ -153,7 +153,7 @@
 |---|---|---|
 | `title` / `subtitle` | str | ≤14 / ≤22 |
 | `mid` | str | ≤14（顶部灰色说明） |
-| `nodes` | list | 3–5 项，`{text, desc, fill}` |
+| `nodes` | list | **3–4 项**（>4 请改用 `chain` / `bullets`），`{text, desc, fill}` |
 | `nodes[].text` | str | ≤7 |
 | `nodes[].desc` | str | ≤18（软） |
 | `bottom` | list | 可选，2–4 项，`{text, desc, fill}`；`text` ≤6、`desc` ≤16（软） |

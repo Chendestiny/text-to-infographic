@@ -137,29 +137,31 @@
       "note": "三块互相关联，学习侧重完全不同"
     },
     {
-      "layout": "flow",
+      "layout": "bullets",
       "title": "Agent 全流程开发",
       "subtitle": "核心主干，[[细分五块]]",
-      "nodes": [
+      "items": [
         {
-          "text": "基础认知"
+          "head": "基础认知"
         },
         {
-          "text": "提示词"
+          "head": "提示词"
         },
         {
-          "text": "工具调用",
-          "fill": "yellow"
+          "head": "工具调用",
+          "desc": "涵盖 FC / Tools Calling / MCP"
         },
         {
-          "text": "RAG"
+          "head": "RAG"
         },
         {
-          "text": "工程化"
+          "head": "工程化"
+        },
+        {
+          "head": "高阶坑",
+          "desc": "循环死锁 / 重试 / 流式 / 人在回路"
         }
-      ],
-      "note": "工具调用涵盖 FC / Tools Calling / MCP",
-      "note2": "高阶：循环死锁 / 重试 / 流式 / 人在回路"
+      ]
     },
     {
       "layout": "timeline",

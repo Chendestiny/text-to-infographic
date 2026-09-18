@@ -183,7 +183,7 @@ layouts:
     nodes:
       count:
         min: 3
-        max: 5
+        max: 4
       fields:
         text:
           max: 7
