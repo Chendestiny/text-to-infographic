@@ -314,7 +314,12 @@ def analyze(rep, boxes=None, texts=None, ink=None):
     # ---- DOM 文字槽：浏览器实测的溢出与孤字（DOM 模式下最权威的一类）----
     for sl in rep.get("slots") or []:
         # 孤字：用真实行盒判 —— 折行是浏览器做的，Python 侧估不准（也不用再维护 wrap_text）
-        if (sl.get("lines") or 0) >= 2 and sl.get("lastW", 1) < 0.25 * max(1.0, sl.get("w", 1)):
+        # 口径与 SVG 侧一致：末行 **≤2 个字**，或不到槽宽 **20%**，才算孤字。
+        # （早先写 25% 太严，把"末行是个短词"也算进来，示例里会刷一堆）
+        _lw = sl.get("lastW", 1e9)
+        _sw = max(1.0, sl.get("w", 1))
+        if (sl.get("lines") or 0) >= 2 and (_lw < 0.20 * _sw
+                                            or _lw < 2.2 * max(1.0, sl.get("fs", 20))):
             issues.append({"kind": "dom-orphan", "tag": "dom",
                            "text": sl.get("text", "")[:30],
                            "note": "末行只剩 %.0f%% 宽（共 %d 行）→ 孤字，建议改短文案"
