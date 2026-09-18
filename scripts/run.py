@@ -84,9 +84,10 @@ def main():
                 print("    " + l.strip())
     if a.no_render:
         print("④ 像素门   （--no-render：跳过出图与实测）")
-        o = ""
+        pipe_out = o = ""
     else:
         o, rc_pipe = run("pipeline.py", spec, "-o", out)
+        pipe_out = o                      # ★ 后面 o 会被 review_sheet 覆盖，先存一份
         # ★ pipeline 崩了必须算硬问题：原来只扫输出里的关键词，脚本抛异常时既没有
         #   measure: 也没有 needs_llm，于是"硬问题 0 处"是**假绿**（实测踩过：
         #   ink.py 被裁坏、palette 未定义，run.py 还报可以交付）
@@ -142,6 +143,33 @@ def main():
         print("· 引擎自己兜住的妥协（%d 处，无需改文案）：" % len(soft))
         for s in soft[:6]:
             print("   " + s[:110])
+    # ★ 交付报告：数字由脚本填好、格式与 SKILL.md 的模板一致 —— 省掉 agent 自己拼装那一轮
+    if not hard:
+        try:
+            _sp = _json.load(io.open(spec, encoding="utf-8"))
+            _cards = _sp.get("cards") or []
+            _lays = " / ".join("%02d %s" % (i, c.get("layout")) for i, c in enumerate(_cards, 1))
+            _plan = (_sp.get("meta") or {}).get("plan") or {}
+            _pl = ("plan.py 建议 %s，区间 %s~%s" % (_plan.get("suggest"),
+                                                   (_plan.get("range") or ["?", "?"])[0],
+                                                   (_plan.get("range") or ["?", "?"])[1])
+                   if _plan.get("suggest") else "meta.plan 未填")
+            _deg = [l.strip() for l in pipe_out.splitlines() if l.strip().startswith("[")]
+            _meas = [l.strip() for l in pipe_out.splitlines() if "measure:" in l or "verify:" in l or "耗时" in l]
+            print("")
+            print("交付报告（数字已填好，可直接粘贴）")
+            print("  页数：%d 页（%s）" % (len(_cards), _pl))
+            print("  版式：%s" % _lays)
+            print("  规格门：%s" % ([l.strip() for l in o.splitlines() if "契约校验" in l]
+                                  or ["（有提示，见上）"])[0])
+            for _l in _meas:
+                print("  像素门：%s" % _l)
+            print("  降级报告：%s" % ("%d 处（缩字/密集档，详见上表）" % len(_deg) if _deg
+                                    else "无"))
+            print("  自检：<待你填> 审美抽查 N 张（或「审美未校验」）")
+        except (ValueError, IOError, NameError):
+            pass
+
     print("=" * 64)
     return 1 if hard else 0
 
