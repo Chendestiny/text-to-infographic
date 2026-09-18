@@ -81,12 +81,14 @@ MEASURE_FN = """(function(){
     var el = slots[si], tr = el.getBoundingClientRect();
     var t = el.querySelector('.t');
     var cs = t ? getComputedStyle(t) : null;
-    var over = false;
+    var over = false, slotH = 0, slotW = 0;
     if (t) {
       var clamp = t.style.webkitLineClamp;
       t.style.webkitLineClamp = 'unset';                 /* 先解除截断才能量到真实高度 */
+      /* ★ 与**槽盒子**比，不是与文字自己比（后者两个值永远相等 → 测不到溢出） */
       over = (t.scrollHeight > el.clientHeight + 1) || (t.scrollWidth > el.clientWidth + 1);
       t.style.webkitLineClamp = clamp;
+      slotH = el.clientHeight; slotW = el.clientWidth;
     }
     rep.slots.push({
       left: wr0 ? +(tr.left - wr0.left).toFixed(1) : 0,
@@ -94,7 +96,7 @@ MEASURE_FN = """(function(){
       w: +tr.width.toFixed(1), h: +tr.height.toFixed(1),
       text: t ? (t.textContent || '').slice(0, 30) : '',
       fs: cs ? parseFloat(cs.fontSize) : 0,
-      sh: t ? t.scrollHeight : 0, ch: t ? t.clientHeight : 0,
+      sh: t ? t.scrollHeight : 0, ch: slotH, sw: t ? t.scrollWidth : 0,
       over: over
     });
   }
