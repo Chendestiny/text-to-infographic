@@ -38,7 +38,9 @@ def run(script, *args):
 
 def main():
     ap = argparse.ArgumentParser(description="一条命令交付")
-    ap.add_argument("spec")
+    ap.add_argument("spec", nargs="?", help="规格文件；用 --plan 时可以省略")
+    ap.add_argument("--plan", metavar="ARTICLE.md",
+                    help="只做页数规划（内部就是 plan.py）：打印张数/区间/页骨架/可粘贴的 meta.plan")
     ap.add_argument("--article", help="给了就做页数对账")
     ap.add_argument("--out", help="出图目录（默认 spec 所在目录）")
     ap.add_argument("--budget", action="store_true",
@@ -46,6 +48,13 @@ def main():
     ap.add_argument("--no-render", action="store_true", help="只过门不出图（写规格阶段用）")
     a = ap.parse_args()
 
+    if a.plan:                      # 规划模式：一条命令入口收敛到 run.py
+        o, _ = run("plan.py", a.plan)
+        print(o.rstrip())
+        return 0
+    if not a.spec:
+        print("用法：run.py <spec.json> [--article 文章.md] [--out 目录] | run.py --plan 文章.md")
+        return 2
     spec = os.path.abspath(a.spec)
     out = a.out or os.path.dirname(spec)
     hard, soft = [], []
