@@ -44,8 +44,8 @@ def main():
     ap.add_argument("out_dir", help="出图目录（里面是 card-*.png）")
     ap.add_argument("--thumb", type=int, default=720, help="缩略图宽度（默认 720）")
     ap.add_argument("--sheet", action="store_true",
-                    help="额外生成拼版图。⚠ 实测拼版（1488×2056）一次视觉调用 >600s 未返回，"
-                         "而 720px 单张 ≈103s —— 成本随像素面积走，默认不生成")
+                    help="额外生成拼版图。⚠ 实测：一次问 4 张的调用 >600s 未返回，"
+                         "单张 30~75s —— 延迟与尺寸无关，是**输出长度**把它拖长了，默认不生成")
     ap.add_argument("--per-sheet", type=int, default=4, help="拼版每张放几张（仅在 --sheet 时）")
     ap.add_argument("--quality", type=int, default=88, help="JPEG 质量（默认 88）")
     a = ap.parse_args()
@@ -100,8 +100,9 @@ def main():
           " / 拼版 %.2f MB" % tot_sheet if sheets else ""))
     print("优先做文字级预检：`python scripts/preflight.py <spec.json>` —— 孤字/断词/数量词"
           "三类**不需要看图**，0 秒 0 token。")
-    print("真要看观感时：抽查 1~2 张 %s/card-XX.jpg 就够（实测 720px 单张一次视觉调用 ≈103 秒，"
-          "拼版更慢）。**别逐张全看、改完文案也不用重新看图**。"
+    print("真要看观感时：抽查 1~2 张 %s/card-XX.jpg 就够。实测延迟**与尺寸无关**"
+          "（同一张图 300px 66s / 1440px 47s，全是服务商波动），成本看**调用次数与输出长度**："
+          "一次只问一个问题、只要一行答案；别拼版、别逐张全看、改完文案不用重看。"
           % (tdir.replace("\\", "/")))
 
 
