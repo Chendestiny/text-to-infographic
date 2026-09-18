@@ -75,20 +75,8 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
   字小一点会点名报告，**不要为它反复改文案**（实测那样会多烧 3~4 轮、几分钟）
 - 唯一真的会把 LLM 拉回来的是「多行放不下会截断」（丢字）和「页数超硬上限」（合并相邻页）
 
-**第 5 步 · 出图，并看三个输出块**
-```bash
-python scripts/pipeline.py <spec.json> -o <out>
-```
-1. `measure: N 处溢出` / `verify:` —— 像素门 + **几何布局门**（同一趟浏览器测量，零额外成本）
-2. `⚠ 降级报告` —— 引擎为了放下字做的妥协（缩字 / 密集档 / 截断 / 封面压扁），**逐卡点名**
-3. `⚠ needs_llm` —— 脚本压不下的那几条，按报错改短再跑（兜底入口，不是失败）
-
-几何布局门查四类：`box-overflow`/`out-of-canvas`（溢出越界）、`crosses-box`（文字压在方框边线上）、
-`crosses-line`（压箭头/连线）、`overlap`（两段文字互相压住）—— 全部用 rect 求交，不依赖视觉模型。
-报错带 `data-tag` 指名槽位（`card-02 chain-note`），细节见 [docs/architecture.md](docs/architecture.md)。
-
-
-报错会带 `data-tag` 指名的槽位（`card-02 chain-note`），不用猜坐标。
+`run.py` 的输出一眼能看：`① 预检 ② 页数 ③ 规格门 ④ 像素门 ⑤ 复核图`，最后一段是结论。
+其中 `④ 像素门` 里 `measure: N 处溢出 / verify:` 是真实浏览器实测的结果。
 
 **第 5 步 ·（可选）看一眼观感**
 正确性四道门已经量完了，这一步只判**配色与疏密**这种主观项，**默认可以不做**。
