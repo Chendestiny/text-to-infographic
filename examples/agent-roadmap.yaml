@@ -43,10 +43,10 @@ cards:
   left:
     label: 现实压力
     blocks:
-    - Claude 替代效应明显
-    - 岗位收缩、内卷加剧
+    - Claude 替代效应
+    - 岗位收缩、内卷
     - {text: 打不过就加入, fill: yellow}
-    note: 要么顶尖专家，要么拓宽边界
+    note: 做到顶尖，或拓宽边界
   right:
     label: 身边案例
     blocks:
@@ -108,7 +108,7 @@ cards:
     label: 面试高频架构
     blocks:
     - {text: Claude Code, fill: yellow}
-    - OpenClaw（小龙虾）
+    - OpenClaw 小龙虾
     - Hermes Agent
     note: 行业顶流，借鉴架构
 - layout: bullets

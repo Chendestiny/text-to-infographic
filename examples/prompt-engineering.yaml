@@ -31,15 +31,15 @@ cards:
       label: 失效写法
       blocks:
         - 不要输出多余字段
-        - 不要重复点同一个按钮
+        - 别重复点同一按钮
         - 不要编造出处
       note: 负向清单永远列不全
     right:
       label: 改成正向
       blocks:
-        - {text: 只输出 schema 字段, fill: yellow}
+        - {text: 输出 schema 字段, fill: yellow}
         - 同一动作最多 3 次
-        - {text: 结论必须附来源字段, fill: blue}
+        - {text: 结论要附来源字段, fill: blue}
       note: "「不要」只给红线"
 
   - layout: compare
@@ -83,16 +83,16 @@ cards:
     subtitle: "让程序[[接得住]]它的回答"
     steps:
       - {text: "① 提示词约定：只输出 JSON",       fill: yellow}
-      - {text: "② 工具调用 FC：schema 天然约束",  fill: blue}
+      - {text: "② 工具调用：schema 天然约束",  fill: blue}
       - {text: "③ API 强制：guided_json",         fill: pink}
       - {text: "语法层模型管，[[语义层代码管]]"}
-    note: 字段白名单 / 操作符 / 数值合理性，Python 硬校验
+    note: 白名单 / 操作符 / 数值合理性，Python 硬校验
 
   - layout: flow
     title: 保命两件事
     subtitle: "比任何写作技巧[[都值钱]]"
     nodes:
-      - {text: 版本管理,      desc: 配置化 + 热加载}
+      - {text: 版本管理,      desc: 配置热加载}
       - {text: 可追溯, fill: yellow}
       - {text: 固定问题集,    desc: "20 个用例"}
       - {text: 回归对比,      fill: blue}
