@@ -288,20 +288,54 @@ def esc(s):
 
 
 def wrap_text(s, size, maxw):
-    """按可用宽度断行。优先在中文标点/空格处断，断点太靠前才硬断。"""
-    lines, cur = [], ""
-    for ch in s:
+    """按可用宽度断行。优先在中文标点/空格处断，断点太靠前才硬断。
+
+    ★ 硬断之前先试"整词换行"：把行尾的拉丁词整体挪到下一行。
+    为什么必须有这一步：原来的"断点不够靠前就硬断"用的是**长度比例**判据
+    （断点 < len(cur)*0.45 就硬断），短行会因此误判 —— 实测
+    `自主 Agent` 在四宫格窄格里：断点处 cur='自主 Ag'（长 5，空格在第 2 位），
+    2 < 5*0.45=2.25 → 判为"太靠前" → 硬断成 `自主 Ag` + `ent`，词被劈开。
+    中文怎么折都行，拉丁词劈开就是硬伤，所以宁可让上一行短一点。
+
+    判据用的是**完整词**（当前行尾的残词 + 后面接着的拉丁字符），
+    因为断点那一刻 cur 里往往只有半个词（'Ag'），拿它判断长度会漏。
+    """
+    lines, cur, i, n = [], "", 0, len(s)
+    while i < n:
+        ch = s[i]
         if cur and tw(cur + ch, size) > maxw:
+            # ① 整词换行：把完整拉丁词挪到下一行（放得下才挪，避免超长单词空转）
+            m = re.search(r"[A-Za-z0-9_\-]+$", cur)
+            word = m.group(0) if m else ""
+            j = i
+            while j < n and re.match(r"[A-Za-z0-9_\-]", s[j]):
+                word += s[j]
+                j += 1
+            if len(word) >= 2 and tw(word, size) <= maxw:
+                head = (cur[:m.start()] if m else cur).rstrip()
+                if head:                       # 上一行至少留 1 个字；宁可短，别劈词
+                    lines.append(head)
+                    cur = word
+                    i = j
+                    continue
+            # ② 标点/空格断行（原有行为）
             cut = -1
             for p in "，。；：、,.;:）) ／/":
                 cut = max(cut, cur.rfind(p))
             if cut >= len(cur) * 0.45:
                 lines.append(cur[:cut + 1])
-                cur = cur[cut + 1:]
+                cur = cur[cut + 1:].lstrip()   # 新行不吃前导空格
             else:
+                # ③ 兜底硬断（超长单词、无标点可断时才会走到这里）
                 lines.append(cur)
                 cur = ""
+        if not cur and ch == " " and lines:
+            # 断行已经消费掉那个空格了，别再让新行以空格开头
+            # （否则 cur 变成 ' pydantic'，整词换行的 head 判定会误判成"行首空格"）
+            i += 1
+            continue
         cur += ch
+        i += 1
     if cur:
         lines.append(cur)
     return lines
