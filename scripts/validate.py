@@ -163,6 +163,28 @@ def validate(spec, layouts):
     elif n < 3:
         warnings.append(("cards", "共 %d 页偏少：要么切太粗，要么文章本来就短" % n, ""))
 
+    # ★ 规格自带计划（meta.plan）：让"页数是否按脚本建议"在产物里一眼可见。
+    # 为什么不靠 --article 对账：检查的时候手上不一定有文章路径，而 spec 一直在。
+    plan_meta = (spec.get("meta") or {}).get("plan") or {}
+    want = plan_meta.get("suggest")
+    rng = plan_meta.get("range") or [4, 9]
+    if want:
+        n_now = len(cards)
+        if n_now == want:
+            pass                                    # 一致，不用说话
+        elif isinstance(rng, list) and rng[0] <= n_now <= rng[1]:
+            warnings.append(("cards", "页数 %d 在区间 %s~%s 内（脚本建议 %d）：偏离可以，"
+                                      "但交付报告里要写清理由" % (n_now, rng[0], rng[1], want), ""))
+        else:
+            warnings.append(("cards", "页数 %d **超出脚本区间 %s~%s**（建议 %d）："
+                                      "要么合并相邻页，要么在报告里写明"
+                                      "「哪一页承载了脚本骨架漏掉的原文重点」"
+                                      % (n_now, rng[0], rng[1], want), ""))
+        note = (plan_meta.get("note") or "").strip()
+        if n_now != want and not note:
+            warnings.append(("cards", "页数偏离了脚本建议但 meta.plan.note 是空的："
+                                      "把理由写进去（这是给读者看的）", ""))
+
     # ★ 几何判定：把每张卡在内存里渲染一遍（不启浏览器），读引擎登记的真实容量。
     # 这是唯一一条**硬墙** —— 契约里的字数只是建议值。
     try:
