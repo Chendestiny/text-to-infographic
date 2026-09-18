@@ -144,9 +144,29 @@ def main():
     ap = argparse.ArgumentParser(description="页数规划：脚本给答案")
     ap.add_argument("article")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--check", metavar="SPEC.json",
+                    help="和一份已写好的规格对账：张数差几张、差在哪")
     args = ap.parse_args()
 
     p = plan(io.open(args.article, encoding="utf-8").read())
+
+    if args.check:
+        raw = io.open(args.check, encoding="utf-8").read()
+        spec = json.loads(raw) if args.check.lower().endswith(".json") else __import__("yaml").safe_load(raw)
+        n = len(spec.get("cards") or [])
+        want = p["suggest_cards"]
+        print("对账：plan.py 建议 %d 张（区间 %d~%d）／这份规格 %d 张 → %s"
+              % (want, p["range"][0], p["range"][1], n,
+                 "一致 ✓" if n == want else "相差 %+d" % (n - want)))
+        if n != want:
+            print("  建议的页骨架（照它写，不用自己再算）：")
+            for i, g in enumerate(p["groups"], 2):
+                print("    card-%02d  %s" % (i, " + ".join(t for t, _ in g)[:52]))
+            note = ((spec.get("meta") or {}).get("plan_note") or "").strip()
+            print("  %s" % ("偏离理由已记录在 meta.plan_note：%s" % note if note
+                            else "⚠ 没有记录偏离理由 —— 请在 spec.meta.plan_note 里写明，"
+                                 "并同步写进交付报告（门禁不会替你解释）"))
+        return 0
     if args.json:
         print(json.dumps(p, ensure_ascii=False, indent=1))
         return 0

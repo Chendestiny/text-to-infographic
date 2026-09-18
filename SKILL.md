@@ -18,6 +18,7 @@ version: 1.0.0
 | 什么时候用 | 命令 | 它给你什么 |
 |---|---|---|
 | 决定拆几页 | `python scripts/plan.py <文章.md>` | 页数建议 + 区间 + **每页骨架**（别自己推） |
+| 写完规格后对账 | `python scripts/plan.py <文章.md> --check <spec.json>` | 张数差几张、差在哪；偏离要写进 `meta.plan_note` |
 | 写完规格 | `python scripts/validate.py <spec.json>` | 几何硬违规 / 密集档提示 / 建议值提示 |
 | 想知道某槽能放几个字 | `python scripts/capacity.py <spec.json>` | 每槽 ok / dense / overflow 的**真实几何** |
 | 出图 | `python scripts/pipeline.py <spec.json> -o <out>` | PNG + 两道门 + **降级报告** |
@@ -41,6 +42,14 @@ python scripts/plan.py <文章.md>
 张数 ≈ 1（封面）+ 章节数；平均每节 <400 汉字两节并一页；全篇 <1.5k 汉字压到 4~5 张 ——
 这些 plan.py 都替你算完并写出了推导。
 **页数由"切法"决定，不随行数增长**：228 行是 7 张，1000 行也是 8~9 张，永远不是 100 张。
+写完规格**拿脚本对一次账**（张数是硬数字，不是你发挥的地方）：
+
+```bash
+python scripts/plan.py <文章.md> --check <spec.json>
+```
+
+一致就过。不一致时它会列出建议骨架，并要求你把偏离理由写进 `spec.meta.plan_note` ——
+**理由要具体到"骨架里哪一页承载不了原文的哪个重点"**，不是"我觉得 9 张好看"。
 
 **第 3 步 · 写规格**：从 [examples/](examples/) 抄一个形状再改文案。
 - 版式字段表在 [docs/layouts.md](docs/layouts.md)，开头还有一张**字段支持总表**
