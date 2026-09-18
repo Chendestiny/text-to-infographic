@@ -101,11 +101,14 @@ def node_verify(state):
         for i in lst:
             if (i["kind"] == "out-of-canvas" and i.get("where") == "y") \
                     or i["kind"] in ("v-overflow", "missing-text", "overlap",
-                                     "crosses-line", "crosses-frame", "crosses-box"):
+                                     "crosses-line", "crosses-frame", "crosses-box",
+                                     "dom-overflow", "dom-orphan"):
                 # 版式 / 内容问题，脚本修不了：v-overflow 要减条数或拆页，
                 # missing-text 是引擎把字吞了，几何门那几类（重叠/压线/压框/穿框）
                 # 只能靠改文案或换版式 —— **绝不能喂给 autofix**：它不是宽度问题，
                 # 注入 textLength 只会把字压扁，还会把 calib 抬高去污染无关卡片。
+                # dom-overflow / dom-orphan 同理：DOM 模式下浏览器已经把字号缩到最小，
+                # 再注入 textLength 毫无意义（实测白烧 3 轮）→ 直接交回改文案或换版式。
                 layout_issues.append((page, i))
             else:
                 width_issues.setdefault(page, []).append(i)
