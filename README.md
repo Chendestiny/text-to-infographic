@@ -64,7 +64,7 @@
 | 页数**跑 `plan.py` 拿答案**（含页骨架），不自己推公式 | SKILL.md 第 2 步 + `scripts/plan.py` |
 | 容量**跑 `capacity.py` 看几何**：ok / dense / overflow，不靠背字数上限 | `scripts/capacity.py` |
 | 两道门都要过；出现 `needs_llm` 就改文案重跑，不许跳门 | SKILL.md 第 4~5 步 |
-| **逐张看图自检**：断词、孤字、被截断、压字、数量词对不上 | SKILL.md 第 6 步 |
+| **复核看拼版图**（720px 缩略图 + 2×2 拼版，一次 4 张），只问断词/孤字/压字/数量词 | `scripts/review_sheet.py` |
 | 每次跑完把**降级报告**摊开（缩字 / 密集档 / 截断，逐卡点名），不藏妥协 | `scripts/pipeline.py` |
 | 交付时给门禁**逐字输出** + 页数理由 + 降级报告 + 自检结论 | SKILL.md 第 6 步 |
 
@@ -202,8 +202,9 @@ SKILL.md                  面向 Agent 的入口（工作流 + 契约 + 文案�
 scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装配
 scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
 scripts/build.py          CLI：规格 → HTML
-scripts/plan.py           CLI：页数规划（建议张数 + 区间 + 每页骨架）
+scripts/plan.py           CLI：页数规划（两级切页：重章节按子节切，出建议张数 + 页骨架）
 scripts/capacity.py       CLI：几何容量（每槽 ok / dense / overflow）
+scripts/review_sheet.py   CLI：复核用 720px 缩略图 + 2×2 拼版图（一次看 4 张）
 scripts/validate.py       CLI：规格门（结构硬违规 + 几何硬墙 + 提示）
 scripts/render.py         CLI：HTML → PNG（浏览器探测）
 scripts/measure.py        真实浏览器文本测量（像素门 + 内容门）
