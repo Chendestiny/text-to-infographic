@@ -66,6 +66,18 @@ def main():
             elif "plan_note" in l:
                 print("  " + l.strip())
 
+    # ②b 规格自带的计划（meta.plan）：不依赖 --article
+    try:
+        m = (json.load(io.open(spec_path, encoding="utf-8")).get("meta") or {}).get("plan") or {}
+        if m.get("suggest"):
+            n = len(json.load(io.open(spec_path, encoding="utf-8"))["cards"])
+            print("  计划：脚本建议 %s 张（区间 %s~%s）／这份 %d 张%s"
+                  % (m["suggest"], (m.get("range") or ["?", "?"])[0],
+                     (m.get("range") or ["?", "?"])[1], n,
+                     "（理由：%s）" % m["note"][:60] if m.get("note") else "（未写理由）"))
+    except (ValueError, KeyError):
+        pass
+
     # ③ 规格门（结构 + 几何硬墙）
     o, rc = run("validate.py", spec_path)
     if rc != 0:

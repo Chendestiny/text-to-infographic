@@ -1089,9 +1089,15 @@ def layout_flow(card, seed):
         x = bx + i * (w + gap)
         fill = PAL.get(nd.get("fill")) or pal.next()
         parts.append(pen_box(x, top, w, bh, i * 15 + 3, fill))
+        # ★ 节点标签字号**随格宽自适应**。原来写死 42px，而格宽 = (bw-(n-1)*gap)/n：
+        #   5 节点时每格只剩 ~140px（可用宽 116），42px 只放得下 2 个汉字，
+        #   而标签通常是 3~4 个字 → 必然 overflow（实测 9 处 overflow 全在 flow）。
+        #   目标：标准档至少放得下 4 个汉字（放不下再走密集档/折行）。
+        lab_maxw = w - 24
+        lab_fs = max(26, min(SIZES["body"] - 10, int(lab_maxw / 4.0)))
         parts.append(hl_line(x + w / 2, top + 62,
                              parse_hl(nd.get("text", ""), pal, plain=bool(fill)),
-                             SIZES["body"] - 10, pad=6, align="center", maxw=w - 24))
+                             lab_fs, pad=6, align="center", maxw=lab_maxw))
         if nd.get("desc"):
             parts.append(txt_block(x + w / 2, top + 118, strip_hl(nd["desc"]), 26,
                                    w - 26, max_lines=2, tag="flow-d%d" % i,
