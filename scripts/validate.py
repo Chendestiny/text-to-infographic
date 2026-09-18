@@ -165,24 +165,29 @@ def validate(spec, layouts):
 
     # ★ 规格自带计划（meta.plan）：让"页数是否按脚本建议"在产物里一眼可见。
     # 为什么不靠 --article 对账：检查的时候手上不一定有文章路径，而 spec 一直在。
-    plan_meta = (spec.get("meta") or {}).get("plan") or {}
+    meta_all = spec.get("meta") or {}
+    plan_meta = meta_all.get("plan") or {}
+    note_txt = (plan_meta.get("note") or meta_all.get("plan_note") or "").strip()
     want = plan_meta.get("suggest")
     rng = plan_meta.get("range") or [4, 9]
-    if want:
+    if want and isinstance(rng, list) and len(rng) == 2:
         n_now = len(cards)
-        if n_now == want:
-            pass                                    # 一致，不用说话
-        elif isinstance(rng, list) and rng[0] <= n_now <= rng[1]:
-            warnings.append(("cards", "页数 %d 在区间 %s~%s 内（脚本建议 %d）：偏离可以，"
-                                      "但交付报告里要写清理由" % (n_now, rng[0], rng[1], want), ""))
-        else:
-            warnings.append(("cards", "页数 %d **超出脚本区间 %s~%s**（建议 %d）："
-                                      "要么合并相邻页，要么在报告里写明"
-                                      "「哪一页承载了脚本骨架漏掉的原文重点」"
-                                      % (n_now, rng[0], rng[1], want), ""))
-        note = (plan_meta.get("note") or "").strip()
-        if n_now != want and not note:
-            warnings.append(("cards", "页数偏离了脚本建议但 meta.plan.note 是空的："
+        cap = meta_all.get("max_cards") or (rng[1] + 1)      # 上浮最多 +1，可用 max_cards 覆盖
+        if n_now > cap:
+            issues.append(("cards",
+                           "页数 %d **超过硬上限 %d**（脚本建议 %d，区间 %s~%s，上浮最多 +1）："
+                           "默认动作是**合并相邻页**，不是写理由 —— 理由不能当无限上浮的通行证。"
+                           "真要更多张，就重新规划成系列（每篇 6~8 张）"
+                           % (n_now, cap, want, rng[0], rng[1]), ""))
+        elif n_now > rng[1]:
+            warnings.append(("cards",
+                             "页数 %d 比区间上沿 %s 多 1（允许）：请在 meta.plan.note 写明"
+                             "「骨架里哪一页承载不了原文的哪个重点」" % (n_now, rng[1]), ""))
+        elif n_now < rng[0]:
+            warnings.append(("cards", "页数 %d 比区间下沿 %s 还少：每页会偏挤，"
+                                      "建议按 plan.py 的骨架拆开" % (n_now, rng[0]), ""))
+        if n_now != want and not note_txt and n_now > rng[1]:
+            warnings.append(("cards", "页数偏离脚本建议但 meta.plan.note 是空的："
                                       "把理由写进去（这是给读者看的）", ""))
 
     # ★ 几何判定：把每张卡在内存里渲染一遍（不启浏览器），读引擎登记的真实容量。

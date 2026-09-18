@@ -163,9 +163,15 @@ def main():
             for i, g in enumerate(p["groups"], 2):
                 print("    card-%02d  %s" % (i, " + ".join(t for t, _ in g)[:52]))
             note = ((spec.get("meta") or {}).get("plan_note") or "").strip()
-            print("  %s" % ("偏离理由已记录在 meta.plan_note：%s" % note if note
-                            else "⚠ 没有记录偏离理由 —— 请在 spec.meta.plan_note 里写明，"
-                                 "并同步写进交付报告（门禁不会替你解释）"))
+            cap = p["range"][1] + 1
+            if n > cap:
+                print("  ✗ 页数 %d **超过硬上限 %d**（区间上沿 %d + 1）：默认动作是"
+                      "**合并相邻页**，不是写理由 —— 或重新规划成系列（每篇 6~8 张）"
+                      % (n, cap, p["range"][1]))
+            else:
+                print("  %s" % ("偏离理由已记录：%s" % note[:80] if note
+                                else "⚠ 没写偏离理由 —— 请在 spec.meta.plan.note 里写明"
+                                     "（门禁不会替你解释）"))
         return 0
     if args.json:
         print(json.dumps(p, ensure_ascii=False, indent=1))
@@ -196,6 +202,12 @@ def main():
         print("  card-%02d  %s（%d 汉字）" % (i, titles[:48], chars))
     print("")
     print("版式自己挑（见 [docs/layouts.md] 的对照表）；主题数就是上面的分组数。")
+    print("")
+    print("把这一行**原样复制**进规格的 meta（门禁按它判页数是否合规）：")
+    print('  "plan": {"suggest": %d, "range": [%d, %d], "note": ""}'
+          % (p["suggest_cards"], p["range"][0], p["range"][1]))
+    print("页数默认照它写；**最多上浮 1 张**，且必须把理由填进 note ——")
+    print("再多就是合并相邻页，或者干脆拆成系列（每篇 6~8 张）。")
     return 0
 
 

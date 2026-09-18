@@ -82,7 +82,11 @@ def main():
     o, rc = run("validate.py", spec_path)
     if rc != 0:
         for l in o.splitlines():
-            if re.search(r"几何上放不下|未知字段|不渲染|条数|页数", l):
+            # 只收**具体条目**，别把段标题（"页数提示（1 处）："）也收进"必须改"
+            if l.strip().endswith("：") or re.match(r"^\s*(契约违规|软约束|密集档提示|超过建议字数|页数提示)",
+                                                   l):
+                continue
+            if re.search(r"几何上放不下|未知字段|不渲染|条数越界|超过硬上限", l):
                 hard.append("规格门 " + l.strip()[:130])
     print([l.strip() for l in o.splitlines() if "契约校验" in l][0] if "契约校验" in o
           else "规格门：见下")
