@@ -381,33 +381,13 @@ def tw(s, size):
     return sum(size * (1.0 if ord(c) > 0x2E80 else 0.62) for c in s) * CALIB[0]
 
 
-def fit(s, size, maxw, tag=""):
-    """字号自适应。三级：原字号 → 密集档（×0.85）→ 连续缩字（缩过头会记 warning）。
-
-    中间这一档是特意加的：连"缩 1px"和"整段重写"之间什么都没有的话，
-    超一点点就直接砍到 18px（实测 hub 的 en 被 33px→18px），既难看又没人知道。
-    """
-    w = tw(s, size)
-    if w <= maxw:
-        return size
-    dense = int(size * DENSE)
-    if tw(s, dense) <= maxw:
-        WARN.append("[%s] 密集档 %dpx（原 %dpx）：标准放不下、小一号放得下｜%s"
-                    % (tag, dense, size, s[:34]))
-        return dense
-    ns = int(size * maxw / w)
-    if ns < 28:
-        WARN.append("[%s] 缩到 %dpx（原 %dpx）｜%s" % (tag, ns, size, s[:34]))
-    return max(20, ns)
-
-
 def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
         maxw=None, tag="", family=None, weight=None, textlength=None, cap=True):
     # 非法 anchor 会静默回退成 start（文字位置整个偏掉，肉眼很难发现）→ 宁可当场炸
     if anchor not in ("start", "middle", "end"):
         raise ValueError("text-anchor 只能是 start/middle/end，收到 %r（center→middle，left→start）"
                          % anchor)
-    if DOM_TEXT and cap:
+    if True:      # DOM 文字模式：只登记槽，不画 SVG 文字（旧 SVG 实现已删）
         # 自动登记为 DOM 槽：矩形由本函数的参数推导（anchor 决定水平对齐方式）
         _w = maxw or (tw(s, size) * 1.06 + 6)
         _x0 = x - _w / 2.0 if anchor == "middle" else (x if anchor == "start" else x - _w)
@@ -416,28 +396,6 @@ def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
                   min_size=max(12, int(size * 0.55)), weight=weight)
         _reg_text(s)
         return ""
-    if maxw and cap:
-        # ★ 登记的是**设计字号**（fit 之前）—— 这样后面才能判断
-        # "标准档放不下、密集档放得下"，而不是拿已经缩过的字号自欺
-        _reg_cap(tag, s, size, maxw, 1)
-    if maxw:
-        size = fit(s, size, maxw, tag)
-    a = ""
-    if family:
-        a += " font-family='%s'" % family
-    if weight:
-        a += " font-weight='%s'" % weight
-    if textlength:
-        # 字体度量估不准时，直接用 SVG 的 textLength 强制占满指定宽度。
-        # lengthAdjust=spacingAndGlyphs 会等比压缩字距和字形，绝不出界。
-        a += " textLength='%.1f' lengthAdjust='spacingAndGlyphs'" % textlength
-    _reg_text(s)
-    # data-tag：让几何门能指名到槽位（"card-03 flow-d2"），而不是只给一堆坐标
-    return ("<text x='%s' y='%s' text-anchor='%s' font-size='%s' fill='%s'%s "
-            "letter-spacing='-1.6' data-tag='%s'>%s</text>"
-            % (x, y, anchor, size, fill, a, esc(tag or "?"),
-               esc(s.replace(" ", "\u00a0"))))
-
 
 def esc(s):
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
@@ -507,8 +465,8 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     # 引擎把尾巴截成「…」时两边都是半句话，门永远发现不了截断
     # （实测踩过：timeline 节点说明「…个簇，只扫最近的簇」被吃掉后半句，门报干净）。
     _reg_text(s)
-    if DOM_TEXT:
-        # 整块登记成一个槽：高度 = 行数 × 行高，宽度 = maxw
+    if True:      # DOM 文字模式：整块登记成一个槽（旧 SVG 实现已删）
+        # 高度 = 行数 × 行高，宽度 = maxw
         _n = max_lines or 1
         _h = _n * size * 1.26
         _x0 = cx if align == "start" else cx - maxw / 2.0
@@ -544,8 +502,7 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     for i, ln in enumerate(lines):
         out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag, cap=False,
                        anchor="start" if align == "start" else "middle"))
-    return "".join(out)
-
+    return ""
 
 # ---------------------------------------------------------------- 高亮语法
 # 规格里的文字支持 [[关键词]] 或 [[关键词|b]] 表示加蜡笔底色，b=blue y=yellow p=pink g=gray
@@ -627,8 +584,8 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
       'MCP' 与 ' 的解法' 重叠 791 px²。色带照旧按估算画（蜡笔笔触本来就有 ±9px
       抖动，漂移看不出来），但文字位置漂移一眼就能看见。
     """
-    if DOM_TEXT:
-        # 高亮：parse_hl 已经把 [[…]] 拆成 (文本, 颜色)，这里**重建**成 [[文本|字母]]，
+    if True:      # DOM 文字模式：重建高亮标记并登记单槽（旧 SVG 实现已删）
+        # parse_hl 已经把 [[…]] 拆成 (文本, 颜色)，这里**重建**成 [[文本|字母]]，
         # 交给 DOM 侧的 _inline 画成 .hl 蜡笔底色（视觉与 SVG 侧一致）。
         _pieces = []
         for _t, _c in parts:
@@ -672,8 +629,7 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
     #   文字会从中心一路往右跑（实测越界 493px，几何门报 out-of-canvas）。
     plain = "".join(t for t, _ in parts)
     anc = {"center": "middle", "left": "start", "right": "end"}.get(align, align)
-    return "".join(bands) + txt(cx, y, plain, size, anchor=anc, tag=tag)
-
+    return ""
 
 # ---------------------------------------------------------------- 版式
 def h1_html(title):
