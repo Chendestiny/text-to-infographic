@@ -966,16 +966,18 @@ def layout_chain(card, seed):
         f = st.get("fill")
         fill = PAL.get(f) if f else pal.next()
         parts.append(pen_box(bx, y, bw, bh, i * 7 + 3, fill))
-        parts.append(hl_line(W_INNER / 2, y + bh / 2 + 17,
-                             parse_hl(st.get("text", ""), pal, plain=bool(fill)),
-                             SIZES["body"], i * 11 + 3, maxw=bw - 24))
+        # ★ DOM 文字（阶段②）：只给"框"，折行/居中/缩放交给浏览器。
+        #   框已上色时去掉 [[高亮]] —— 色带和框色打架，这条规则与 SVG 模式一致。
+        _reg_slot(bx + 16, y + 12, bw - 32, bh - 24,
+                  strip_hl(st.get("text", "")) if fill else st.get("text", ""),
+                  SIZES["body"], clamp=1, min_size=20)
         if i < n - 1:
             parts.append(v_arrow(W_INNER / 2, y + bh, y + step - 2, "a0", i * 13 + 3))
     if note:
         ny = note_baseline(avail - nb + 1.05 * SIZES["note"] + 0.67 * SIZES["note"] + 10,
                            SIZES["note"], 2)
-        parts.append(txt_block(W_INNER / 2, ny, strip_hl(note),
-                               SIZES["note"], W_INNER, max_lines=2, tag="chain-note"))
+        _reg_slot(0, ny - 48, W_INNER, 96, strip_hl(note),
+                  SIZES["note"], clamp=2, min_size=20)
     parts.append("</svg>")
     return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
             "xmlns='http://www.w3.org/2000/svg'>%s"
@@ -1302,8 +1304,10 @@ def layout_compare(card, seed):
     box_y, box_h, pad = 90, (730 if has_note else 760), 36
 
     def col(cfg, x0, seed0):
-        g = [hl_line(x0 + col_w / 2, 52, parse_hl(cfg.get("label", ""), pal),
-                     44, seed0, maxw=col_w - 20)]
+        g = []
+        # ★ DOM 文字（阶段②）：列标题、块文字、备注全部登记为 slot
+        _reg_slot(x0 + 4, 22, col_w - 8, 60, cfg.get("label", ""), 44,
+                  clamp=1, min_size=22)
         g.append(pen_box(x0 + 3, box_y, col_w - 6, box_h, seed0 + 1, None))
         blocks = cfg.get("blocks", [])
         n = max(1, len(blocks))
@@ -1316,14 +1320,14 @@ def layout_compare(card, seed):
             text = b.get("text", "") if isinstance(b, dict) else b
             y = area_y + i * (bh + 22)
             g.append(pen_box(x0 + 30, y, col_w - 60, bh, seed0 + i * 13 + 9, fill))
-            g.append(hl_line(x0 + col_w / 2, y + bh / 2 + 12,
-                             parse_hl(text, pal, plain=not (f in (None, "none"))), 34,
-                             pad=6, maxw=col_w - 72))
+            # 框已上色时去掉 [[高亮]]（色带与框色打架），与 SVG 模式规则一致
+            _reg_slot(x0 + 36, y + 8, col_w - 84, bh - 16,
+                      strip_hl(text) if f not in (None, "none") else text,
+                      34, clamp=2, min_size=16)
         if cfg.get("note"):
             ny = note_baseline(box_y + box_h + 56, 34, 2)
-            g.append(txt_block(x0 + col_w / 2, ny,
-                               strip_hl(cfg["note"]), 34, col_w - 12, max_lines=2,
-                               tag="cmp-note"))
+            _reg_slot(x0, ny - 44, col_w, 88, strip_hl(cfg["note"]),
+                      34, clamp=2, min_size=18)
         return "".join(g)
 
     parts.append(col(left, BOX_INSET, 5))

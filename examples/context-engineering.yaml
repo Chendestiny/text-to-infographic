@@ -35,7 +35,7 @@ cards:
         - 上周模板
         - 这周数据
         - {text: 老板偏好 + 格式, fill: yellow}
-      note: 材料摆上桌，还要摆对位置
+      note: 材料摆上桌，还要摆得对
 
   # 03 四块料
   - layout: chain
