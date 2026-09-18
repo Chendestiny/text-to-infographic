@@ -503,7 +503,6 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
         out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag, cap=False,
                        anchor="start" if align == "start" else "middle"))
     return ""
-
 # ---------------------------------------------------------------- 高亮语法
 # 规格里的文字支持 [[关键词]] 或 [[关键词|b]] 表示加蜡笔底色，b=blue y=yellow p=pink g=gray
 HL_RE = re.compile(r"\[\[(.+?)(?:\|([a-z]{1,2}))?\]\]")
@@ -630,7 +629,6 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
     plain = "".join(t for t, _ in parts)
     anc = {"center": "middle", "left": "start", "right": "end"}.get(align, align)
     return ""
-
 # ---------------------------------------------------------------- 版式
 def h1_html(title):
     """主标题：超宽就缩字号，**绝不折行**。
