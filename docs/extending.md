@@ -116,3 +116,36 @@ python scripts/pipeline.py examples/json/agent-roadmap.json -o build/chk   # 全
 ```
 
 四条都过，才算加完。
+
+
+## 加一种版式：只画墨迹，文字登记成"槽"
+
+文字**不要**自己算折行，也不要画 SVG `<text>`。照 `layout_flow` / `layout_chain` / `layout_compare` 写：
+
+```python
+def layout_mine(card, seed):
+    parts = [defs("a0")]
+    for i, it in enumerate(card.get("items", [])):
+        x, y, w, h = 8, 100 + i * 120, 808, 100
+        parts.append(pen_box(x, y, w, h, seed + i, pal.next()))       # 墨迹：方框
+        # 文字：只给"容器矩形"，折行/居中/缩放交给浏览器
+        _reg_slot(x + 16, y + 10, w - 32, h - 20, it.get("text", ""),
+                  SIZES["body"], clamp=2, min_size=20)
+    return "<svg class='stage' …>%s</svg>" % "".join(parts)
+```
+
+`_reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weight=None)`
+
+| 参数 | 含义 |
+|---|---|
+| `x, y, w, h` | 文字**容器的矩形**（不是基线位置；浏览器在框内折行并垂直居中） |
+| `size` | 起手字号；放不下时 autofit 会往下缩到 `min_size` |
+| `clamp` | 最多几行（单行槽传 1） |
+| `min_size` | 字号下限，一般取 `size` 的 0.5~0.6 |
+| `align` | 默认居中；左对齐传 `"start"` |
+
+两条纪律：
+1. **框已上色时用 `strip_hl(...)`** 去掉 `[[高亮]]`（色带与框色打架）；未上色时保留 `[[…]]`，DOM 侧会画蜡笔底色
+2. 不要调用 `txt` / `txt_block` / `hl_line` 画正文 —— 它们是旧路径，正在退役
+
+加完版式后跑 `python scripts/run.py <spec.json> --out <目录>`，exit=0 即可。
