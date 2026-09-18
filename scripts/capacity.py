@@ -67,10 +67,10 @@ def judge(entry):
     if out["verdict"] == "dense":
         out["severity"] = "warn"
     elif out["verdict"] == "overflow":
-        if max_lines > 1:
-            out["severity"] = "hard"                      # 会被截成「…」→ 丢内容
-        else:
-            out["severity"] = "hard" if out["shrink_to"] < 28 else "warn"
+        # ★ 只有**多行**放不下才是硬问题：那意味着引擎会把尾巴截成「…」= 丢字。
+        #   单行放不下只是"缩字"——引擎保证不出框、不丢字，改文案纯属浪费一轮 LLM
+        #   （实测：为适配反复改文案是慢的主因）。
+        out["severity"] = "hard" if max_lines > 1 else "warn"
     else:
         out["severity"] = "ok"
     return out

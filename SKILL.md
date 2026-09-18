@@ -17,14 +17,12 @@ version: 1.0.0
 
 | 什么时候用 | 命令 | 它给你什么 |
 |---|---|---|
-| 决定拆几页 | `python scripts/plan.py <文章.md>` | 页数建议 + 区间 + **每页骨架**（别自己推） |
-| 写完规格后过门（一次搞定） | `python scripts/check.py <spec.json> --article <文章.md>` | 预检 + 页数对账 + 规格门 + 像素门，一份结论 |
-| 写文案**之前**看预算 | `python scripts/capacity.py <spec.json> --budget` | 每槽能放几个汉字（按真实几何算） |
-| 写完规格 | `python scripts/validate.py <spec.json>` | 几何硬违规 / 密集档提示 / 建议值提示 |
-| 想知道某槽能放几个字 | `python scripts/capacity.py <spec.json>` | 每槽 ok / dense / overflow 的**真实几何** |
-| 出图 | `python scripts/pipeline.py <spec.json> -o <out>` | PNG + **四道门** + 降级报告 |
-| 交付前预检（不用看图） | `python scripts/preflight.py <spec.json>` | 孤字 / 断词 / 数量词 / 贴边 |
-| 想看观感时 | `python scripts/review_sheet.py <出图目录>` | 720px 单张缩略图（看图很贵，只抽查 1~2 张） |
+| ① 决定拆几页 | `python scripts/plan.py <文章.md>` | 页数建议 + 区间 + **每页骨架** + 可直接粘贴的 `meta.plan` |
+| ② 交付（一条命令全包） | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` | 预检 + 页数对账 + 规格门 + 像素门/几何门 + 复核缩略图 + **一句结论** |
+| ③ 写文案前看预算（可选） | `python scripts/capacity.py <spec.json> --budget` | 每槽能放几个汉字（按真实几何算） |
+
+**四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 / 几何布局门），一条命令跑完就叫"过门"，
+不要再分头跑 —— 实测分头跑会让一轮多出 20+ 次命令调用。
 
 ---
 
@@ -77,11 +75,17 @@ python scripts/capacity.py <骨架.json> --budget     # 每槽能放几个汉字
 - 放不下时**先换版式或换写法**（一页 `bullets` 4~6 条、`chain` 5~6 步、`compare` 4+4 条），别硬塞
 - 语法见本文「三、规格语法」
 
-**第 4 步 · 过规格门**：`python scripts/validate.py <spec.json>`
-- 「几何上放不下」= **硬违规**：会丢字（多行被截成「…」）或缩到 <28px 不可读 → 必须改短或换版式
-- 「密集档」「超过建议字数」= 提示，不阻断（密集档 = 小一号字，视觉略不一致）
-- 结构问题（未知字段 / note 不支持 / 条数越界 / 页数超平台）一律硬违规
-**0 硬违规才继续。**
+**第 4 步 · 交付：跑一条命令**
+```bash
+python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
+```
+
+它一次做完：文字预检 → 页数对账 → 规格门 → 像素门/几何门 → 出图 → 复核缩略图 → 一句结论。
+
+- **只看结论里的「必须改」**：逐条改掉再跑同一条命令，通常 1~2 次就干净
+- 「引擎自己兜住的妥协」（缩字 / 密集档）**不是你的活**：引擎保证不出框、不丢字，
+  字小一点会点名报告，**不要为它反复改文案**（实测那样会多烧 3~4 轮、几分钟）
+- 唯一真的会把 LLM 拉回来的是「多行放不下会截断」（丢字）和「页数超硬上限」（合并相邻页）
 
 **第 5 步 · 出图，并看三个输出块**
 ```bash
@@ -102,7 +106,7 @@ python scripts/pipeline.py <spec.json> -o <out>
 
 报错会带 `data-tag` 指名的槽位（`card-02 chain-note`），不用猜坐标。
 
-**第 6 步 · 预检 →（可选）看图 → 交付**
+**第 5 步 ·（可选）看一眼观感**
 两道门只保证"没溢出、没吞字"。交付前先跑**文字级预检**（0 秒、0 token、不需要看图）：
 
 ```bash
