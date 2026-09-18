@@ -21,7 +21,7 @@ cards:
     mini: steps
     items:
     - {text: 扫盲}
-    - {text: 框架实战}
+    - {text: 实战}
     - {text: 微调}
     - {text: 工程化}
   - label: 框架怎么学

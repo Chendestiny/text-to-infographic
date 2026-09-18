@@ -77,7 +77,7 @@ cards:
         - {text: "lists = 行数/1000", fill: yellow}
         - "probes = 10"
         - 轻、省内存
-      note: 必须先灌完数据再建索引
+      note: 先灌完数据再建索引
     right:
       label: "hnsw"
       blocks:
