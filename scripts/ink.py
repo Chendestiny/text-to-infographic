@@ -58,7 +58,14 @@ _TEXTS = []
 # 容量不是拍脑袋的常数 —— 它由 maxw 与字号推出来，所以契约里那 81 个手写上限
 # 只能算"建议值"，真实能不能放下由几何说话（capacity.py / 规格门都用这份登记）。
 _CAPS = []
+_INK = []          # 墨迹包围盒（箭头/外框/方框），供几何布局门做求交
 DENSE = 0.85        # 密集档字号系数：M~P 之间放得下的文案，用这一档渲染
+
+
+def _reg_ink(kind, x, y, w, h):
+    """登记一块"墨迹"的包围盒：文字不该穿过它（line=箭头/frame=外框/box=方框）。"""
+    _INK.append({"kind": kind, "x": float(x), "y": float(y),
+                 "w": float(w), "h": float(h)})
 
 
 def _reg_cap(tag, text, size, maxw, max_lines=1):
@@ -183,9 +190,12 @@ def hrect_path(x, y, w, h, seed, amp=1.8, seg=5):
 def pen_box(x, y, w, h, seed, fill=None):
     """手绘方框：闭合路径负责填充，四条带笔锋的线负责描边。fill=None 表示不上色。"""
     _BOXES.append({"x": x, "y": y, "w": w, "h": h})
+    _reg_ink("box", x, y, w, h)
     d = hrect_path(x, y, w, h, seed)
     out = "" if not fill else "<path d='%s' fill='%s'/>" % (d, fill)
-    return out + pen_path(pen_rect(x, y, w, h, seed))
+    # 包 <g data-ink='box'>：几何门在浏览器里 querySelector 量**真实画出来的**范围
+    # （手绘笔锋会 overshoot 1~7px，名义 rect 和画出来的线不是一回事）
+    return "<g data-ink='box'>%s</g>" % (out + pen_path(pen_rect(x, y, w, h, seed)))
 
 
 def dash_box(x, y, w, h, seed, label=None, label_size=28):
@@ -230,9 +240,11 @@ def hellipse(cx, cy, rx, ry, seed):
 
 
 def arrow(x1, y1, x2, y2, mid, seed=1):
+    _reg_ink("line", min(x1, x2) - 2, min(y1, y2) - 2,
+             abs(x2 - x1) + 4, abs(y2 - y1) + 4)
     d = hand_line(x1, y1, x2, y2, seed, seg=8, amp=1.6, over=0)
-    return ("<path d='%s' fill='none' stroke='%s' stroke-width='%.1f' "
-            "stroke-linecap='round' marker-end='url(#%s)'/>" % (d, INK, SW_ARROW, mid))
+    return ("<g data-ink='line'><path d='%s' fill='none' stroke='%s' stroke-width='%.1f' "
+            "stroke-linecap='round' marker-end='url(#%s)'/></g>" % (d, INK, SW_ARROW, mid))
 
 
 def v_arrow(x, y1, y2, mid, seed=3):
@@ -250,8 +262,10 @@ def frame_overlay(kind, seed):
     """整卡外框：pen = 手绘外框 / card = 圆角卡 / none = 无框。"""
     if kind != "pen":
         return ""
+    # 外框线本身要登记：文字压到卡框是肉眼可见缺陷，用 rect 求交就能抓
+    _reg_ink("frame", 26 - 7, 26 - 7, W_CARD - 52 + 14, H_CARD - 52 + 14)
     segs = pen_rect(26, 26, W_CARD - 52, H_CARD - 52, seed, amp=2.0, over=(2.0, 7.0))
-    return ("<svg class='frame' width='%d' height='%d' viewBox='0 0 %d %d' "
+    return ("<svg class='frame' data-ink='frame' width='%d' height='%d' viewBox='0 0 %d %d' "
             "xmlns='http://www.w3.org/2000/svg'>%s</svg>"
             % (W_CARD, H_CARD, W_CARD, H_CARD, pen_path(segs)))
 
@@ -289,6 +303,10 @@ def fit(s, size, maxw, tag=""):
 
 def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
         maxw=None, tag="", family=None, weight=None, textlength=None, cap=True):
+    # 非法 anchor 会静默回退成 start（文字位置整个偏掉，肉眼很难发现）→ 宁可当场炸
+    if anchor not in ("start", "middle", "end"):
+        raise ValueError("text-anchor 只能是 start/middle/end，收到 %r（center→middle，left→start）"
+                         % anchor)
     if maxw and cap:
         # ★ 登记的是**设计字号**（fit 之前）—— 这样后面才能判断
         # "标准档放不下、密集档放得下"，而不是拿已经缩过的字号自欺
@@ -305,9 +323,11 @@ def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
         # lengthAdjust=spacingAndGlyphs 会等比压缩字距和字形，绝不出界。
         a += " textLength='%.1f' lengthAdjust='spacingAndGlyphs'" % textlength
     _reg_text(s)
+    # data-tag：让几何门能指名到槽位（"card-03 flow-d2"），而不是只给一堆坐标
     return ("<text x='%s' y='%s' text-anchor='%s' font-size='%s' fill='%s'%s "
-            "letter-spacing='-1.6'>%s</text>"
-            % (x, y, anchor, size, fill, a, esc(s.replace(" ", "\u00a0"))))
+            "letter-spacing='-1.6' data-tag='%s'>%s</text>"
+            % (x, y, anchor, size, fill, a, esc(tag or "?"),
+               esc(s.replace(" ", "\u00a0"))))
 
 
 def esc(s):
@@ -477,6 +497,11 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
 
     ★ 必须「先画完所有色带、再统一画所有文字」——逐段交替输出时，
       后一段的色带会盖住前一段的文字。
+
+    ★ 文字**必须是一条 <text>**：拆成多条时，每段的 x 要靠 tw() 估算手动推进，
+      估算漂移会让相邻段真的压在一起 —— 几何布局门实测抓到
+      'MCP' 与 ' 的解法' 重叠 791 px²。色带照旧按估算画（蜡笔笔触本来就有 ±9px
+      抖动，漂移看不出来），但文字位置漂移一眼就能看见。
     """
     _reg_cap(tag, "".join(t for t, _ in parts), size, maxw, 1)
     total = sum(tw(t, size) for t, _ in parts) * 1.06   # 实际渲染宽估计
@@ -492,7 +517,7 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
             size = max(20, int(size * maxw / total))
             total = sum(tw(t, size) for t, _ in parts) * 1.06
     x = cx - total / 2.0 if align == "center" else cx
-    bands, texts = [], []
+    bands = []
     for i, (t, col) in enumerate(parts):
         w = tw(t, size)
         if col:
@@ -501,9 +526,14 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
             f = 1.0 + 0.08 * (latin / float(max(1, len(t))))
             bands.append(crayon(x + w / 2.0, y - size * 0.26, w * f + pad * 2,
                                 size * 1.02, seed + i * 17, col))
-        texts.append(txt(x, y, t, size, anchor="start"))
         x += w
-    return "".join(bands) + "".join(texts)
+    # 文字只画一条：整行交给浏览器排，不再按估算逐段推进。
+    # ★ align 的取值是给布局代码看的（center/left/right），**不能直接当 text-anchor 用**：
+    #   SVG 只认 start/middle/end，"center" 是非法值 → 浏览器静默回退成 start，
+    #   文字会从中心一路往右跑（实测越界 493px，几何门报 out-of-canvas）。
+    plain = "".join(t for t, _ in parts)
+    anc = {"center": "middle", "left": "start", "right": "end"}.get(align, align)
+    return "".join(bands) + txt(cx, y, plain, size, anchor=anc, tag=tag)
 
 
 # ---------------------------------------------------------------- 版式
@@ -1459,6 +1489,7 @@ def render_card(card, idx, total, meta, font_url):
     _BOXES.clear()
     _TEXTS.clear()
     _CAPS.clear()
+    _INK.clear()
     body = LAYOUTS[layout](card, idx * 17 + 7)
     sub = _sub(card.get("subtitle", ""))
     h1 = h1_html(card.get("title", ""))
@@ -1490,9 +1521,10 @@ def render_card(card, idx, total, meta, font_url):
     # ★ manifest 必须最后算：上面每个渲染函数都会 _reg_text 登记文字，
     # 早算一步就漏掉后发生的那批（踩过：算在 _sub 之前 → 副标题没进清单，
     # 于是内容门对副标题完全失明）。
-    manifest = "<!--T2I_BOXES:%s--><!--T2I_TEXTS:%s--><!--T2I_CAPS:%s-->" % (
+    manifest = ("<!--T2I_BOXES:%s--><!--T2I_TEXTS:%s--><!--T2I_CAPS:%s-->"
+                "<!--T2I_INK:%s-->") % (
         json.dumps(_BOXES), json.dumps(_TEXTS, ensure_ascii=False),
-        json.dumps(_CAPS, ensure_ascii=False))
+        json.dumps(_CAPS, ensure_ascii=False), json.dumps(_INK, ensure_ascii=False))
     return ("""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><style>%s</style></head>
 <body><div class="card %s">

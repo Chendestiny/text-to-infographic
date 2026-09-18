@@ -21,7 +21,7 @@ version: 1.0.0
 | 写完规格后对账 | `python scripts/plan.py <文章.md> --check <spec.json>` | 张数差几张、差在哪；偏离要写进 `meta.plan_note` |
 | 写完规格 | `python scripts/validate.py <spec.json>` | 几何硬违规 / 密集档提示 / 建议值提示 |
 | 想知道某槽能放几个字 | `python scripts/capacity.py <spec.json>` | 每槽 ok / dense / overflow 的**真实几何** |
-| 出图 | `python scripts/pipeline.py <spec.json> -o <out>` | PNG + 两道门 + **降级报告** |
+| 出图 | `python scripts/pipeline.py <spec.json> -o <out>` | PNG + **四道门** + 降级报告 |
 | 交付前预检（不用看图） | `python scripts/preflight.py <spec.json>` | 孤字 / 断词 / 数量词 / 贴边 |
 | 想看观感时 | `python scripts/review_sheet.py <出图目录>` | 720px 单张缩略图（看图很贵，只抽查 1~2 张） |
 
@@ -68,9 +68,20 @@ python scripts/plan.py <文章.md> --check <spec.json>
 ```bash
 python scripts/pipeline.py <spec.json> -o <out>
 ```
-1. `measure: N 处溢出` / `verify:` —— 像素门（真实浏览器 `getBBox` 实测）
+1. `measure: N 处溢出` / `verify:` —— 像素门 + **几何布局门**（同一趟浏览器测量，零额外成本）
 2. `⚠ 降级报告` —— 引擎为了放下字做的妥协（缩字 / 密集档 / 截断 / 封面压扁），**逐卡点名**
 3. `⚠ needs_llm` —— 脚本压不下的那几条，按报错改短再跑（兜底入口，不是失败）
+
+几何布局门查这四类，**全部用 rect 求交/实测，不依赖任何视觉模型**：
+
+| 问题 | 判定 | 说明 |
+|---|---|---|
+| `box-overflow` / `out-of-canvas` | 文字 rect vs 方框 / 画布 | 溢出与越界（位置用视觉 rect，认父级 transform） |
+| `crosses-box` | 文字纵向穿出方框 | **备注压在方框下边框上**——肉眼最容易漏的一类 |
+| `crosses-line` | 文字压到箭头/连线 | 连线穿过文字 |
+| `overlap` | 两段文字互相压住 | 由 `hl_line` 拆分改写、或两块文案挤到一起 |
+
+报错会带 `data-tag` 指名的槽位（`card-02 chain-note`），不用猜坐标。
 
 **第 6 步 · 预检 →（可选）看图 → 交付**
 两道门只保证"没溢出、没吞字"。交付前先跑**文字级预检**（0 秒、0 token、不需要看图）：
@@ -81,6 +92,9 @@ python scripts/preflight.py <spec.json>      # 孤字 / 断词 / 数量词 / 贴
 
 它管三类：**孤字**（末行只剩 1~2 字）、**断词**（拉丁词被折开）、**数量词**（标题写"两件事"却列了 4 条）。
 压字·出框由像素门实测；**配色·疏密这一类才真的需要看图**。
+
+**视觉只用于最后一道（可选）的审美抽查**：正确性已由几何门量完，视觉只判
+「配色是否好看、疏密是否舒服」这类主观项 —— **最多 1 次、只抽查 1~2 张**，甚至可以不做。
 
 看图很贵，**别当默认动作** —— 实测（本机 vision 走 qwen3.8-max，同一张封面图换了 7 个尺寸）：
 
