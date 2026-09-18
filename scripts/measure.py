@@ -90,6 +90,22 @@ MEASURE_FN = """(function(){
       t.style.webkitLineClamp = clamp;
       slotH = el.clientHeight; slotW = el.clientWidth;
     }
+    /* 行盒：DOM 模式下折行是浏览器做的，孤字要用**真实行盒**判（Python 侧估不准）。
+       ★ `.t` 是 display:-webkit-box，Range.getClientRects() 对它返回空 →
+         必须临时切回 display:block 才量得到（折行行为不变），量完还原。 */
+    var lines = 0, lastW = 0;
+    if (t && !over) {
+      var disp = t.style.display;
+      t.style.display = 'block';
+      var rng = document.createRange();
+      rng.selectNodeContents(t);
+      var rects = rng.getClientRects();
+      if (rects && rects.length) {
+        lines = rects.length;
+        lastW = rects[rects.length - 1].width;
+      }
+      t.style.display = disp;
+    }
     rep.slots.push({
       left: wr0 ? +(tr.left - wr0.left).toFixed(1) : 0,
       top: wr0 ? +(tr.top - wr0.top).toFixed(1) : 0,
@@ -97,6 +113,7 @@ MEASURE_FN = """(function(){
       text: t ? (t.textContent || '').slice(0, 30) : '',
       fs: cs ? parseFloat(cs.fontSize) : 0,
       sh: t ? t.scrollHeight : 0, ch: slotH, sw: t ? t.scrollWidth : 0,
+      lines: lines, lastW: +lastW.toFixed(1),
       over: over
     });
   }
