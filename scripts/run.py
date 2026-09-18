@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""run.py —— 一条命令交付：过四道门 + 出图 + 生成复核缩略图 + 一份结论。
+
+为什么要合成一条（用户实测的痛点）：一轮生图跑到 **19~31 次工具调用**、4 轮返工，
+其中大量是"每条门各跑一次、再自己把几份输出拼起来判断"。这里全部合成一次调用。
+
+    python scripts/run.py <spec.json> [--article <文章.md>] [--out <出图目录>]
+
+它依次做：
+    ① 文字级预检（孤字 / 断词 / 数量词）      零成本，不起浏览器
+    ② 页数对账（给了文章才做：plan.py --check）
+    ③ 规格门（结构 + 几何硬墙）
+    ④ 像素门 + 几何布局门（起一次浏览器）
+    ⑤ 复核缩略图（720px，看图时抽查 1~2 张就够）
+最后给一句结论：可以交付 / 必须改什么。
+
+退出码：0 = 可以交付；1 = 有硬问题
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def run(script, *args):
+    env = dict(os.environ)
+    env.setdefault("T2I_BACKEND", os.environ.get("T2I_BACKEND", "cdp"))
+    p = subprocess.run([sys.executable, os.path.join(HERE, script)] + [str(a) for a in args],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       cwd=ROOT, env=env)
+    return (p.stdout or "") + (p.stderr or ""), p.returncode
+
+
+def main():
+    ap = argparse.ArgumentParser(description="一条命令交付")
+    ap.add_argument("spec")
+    ap.add_argument("--article", help="给了就做页数对账")
+    ap.add_argument("--out", help="出图目录（默认 spec 所在目录）")
+    a = ap.parse_args()
+
+    spec = os.path.abspath(a.spec)
+    out = a.out or os.path.dirname(spec)
+    hard, soft = [], []
+
+    o, _ = run("preflight.py", spec)
+    for l in o.splitlines():
+        if l.strip().startswith("✗"):
+            hard.append("预检｜" + l.strip())
+    print("① 预检     " + ([l.strip() for l in o.splitlines() if "文字级预检" in l]
+                            or ["（未输出）"])[0])
+
+    if a.article:
+        o, _ = run("plan.py", a.article, "--check", spec)
+        for l in o.splitlines():
+            if "对账" in l:
+                print("② 页数     " + l.strip())
+            elif "超过硬上限" in l:
+                hard.append("页数｜" + l.strip())
+            elif "⚠" in l:
+                soft.append(l.strip())
+
+    o, rc = run("validate.py", spec)
+    for l in o.splitlines():
+        s = l.strip()
+        if s.endswith("：") or re.match(r"^(页数提示|契约违规|软约束|密集档提示|超过建议字数)", s):
+            continue
+        if re.search(r"几何上放不下|未知字段|不渲染|条数越界|超过硬上限", s):
+            hard.append("规格门｜" + s[:120])
+    print("③ 规格门   " + ([l.strip() for l in o.splitlines() if "契约校验" in l]
+                            or ["有提示（见下）"])[0])
+
+    o, _ = run("pipeline.py", spec, "-o", out)
+    for l in o.splitlines():
+        s = l.strip()
+        if re.search(r"measure:|verify:|降级 |耗时", s):
+            print("④ 像素门   " + s)
+        if re.search(r"crosses-|overlap|需要 LLM 重写", s):
+            hard.append("像素门｜" + s[:120])
+        if s.startswith("[") and re.search(r"缩到|密集档|截断", s):
+            soft.append(s)
+
+    o, _ = run("review_sheet.py", out)
+    thumbs = re.search(r"(\d+)x", o)
+    print("⑤ 复核图   " + ([l.strip() for l in o.splitlines() if "真要看观感时" in l]
+                            or ["已生成复核缩略图"])[0][:96])
+
+    print("\n" + "=" * 64)
+    if hard:
+        print("✗ 必须改（%d 处）—— 改完再跑一次本命令即可：" % len(hard))
+        for h in hard[:12]:
+            print("   " + h)
+    else:
+        print("✓ 硬问题 0 处 —— 可以交付。")
+        print("  下一页要做的是**看图**：如果是审美抽查，最多看 1~2 张 review/thumb/；")
+        print("  文字类毛病（孤字/断词/数量词/压框）四道门已经量过了，不用再看。")
+    if soft:
+        print("· 引擎自己兜住的妥协（%d 处，无需改文案）：" % len(soft))
+        for s in soft[:6]:
+            print("   " + s[:110])
+    print("=" * 64)
+    return 1 if hard else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

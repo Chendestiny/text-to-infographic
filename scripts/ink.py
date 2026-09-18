@@ -423,13 +423,17 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     _reg_cap(tag, s, size, maxw, max_lines or 1)
     lines = wrap_text(s, size, maxw)
     if max_lines and len(lines) > max_lines:
-        # ★ 先试密集档：小一号字常常刚好能塞进原定行数，胜过截成「…」
-        dsize = int(size * DENSE)
-        dlines = wrap_text(s, dsize, maxw)
-        if len(dlines) <= max_lines:
-            WARN.append("[%s] 密集档 %dpx（原 %dpx）：折行超限、小一号塞得下｜%s"
-                        % (tag, dsize, size, strip_hl(s)[:34]))
-            size, lines = dsize, dlines
+        # ★ 多档缩小：小一号不行就再小，直到塞进原定行数 —— **绝不轻易截断**。
+        #   为什么要有这个循环：截断 = 丢字 = 必须让 LLM 改文案重跑（实测平均 4 轮）。
+        #   而"字小一点"只是观感问题，会在降级报告里点名，不该换来一轮 LLM。
+        for tier in (0.85, 0.78, 0.72, 0.66, 0.60):
+            dsize = int(size * tier)
+            dlines = wrap_text(s, dsize, maxw)
+            if len(dlines) <= max_lines:
+                WARN.append("[%s] 密集档 ×%.2f（%dpx，原 %dpx）：折行超限、缩小后塞得下｜%s"
+                            % (tag, tier, dsize, size, strip_hl(s)[:34]))
+                size, lines = dsize, dlines
+                break
     if max_lines and len(lines) > max_lines:
         n_all = len(lines)
         lines = lines[:max_lines]
