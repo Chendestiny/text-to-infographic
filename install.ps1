@@ -1,20 +1,29 @@
 ﻿# text-to-infographic installer (Windows)
 # Usage:
 #   irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
-#   .\install.ps1 -CheckOnly     # dry run, writes nothing
+#   irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1 | iex     # 国内镜像
+#   .\install.ps1 -CheckOnly          # dry run, writes nothing
+#   .\install.ps1 -Repo <git url>     # 指定仓库（fork / 私有镜像）
+#
+# 仓库来源：先探 GitHub，探不通自动走 Gitee 镜像（两边内容同步）。
+# 也可以用环境变量 T2I_REPO 指定；克隆失败时会在两个镜像之间自动重试。
 #
 # 踩过的坑（都在真机上复现过，别再改回去）：
-#  1) PS 5.1 里 "$v:" 会被当成「驱动器限定变量引用」直接报错，必须写 "${v}:"。
-#     影响面极大：默认 Win10/11 只有 Windows PowerShell 5.1，一行安装会必挂。
-#  2) $ErrorActionPreference="Stop" + 原生命令把进度写到 stderr（git clone / pip 都会）
-#     → PowerShell 包成 NativeCommandError 并终止脚本。症状是"克隆其实成功了，但脚本
-#     提前退出、doctor 没跑"。所以原生命令统一走 Native() 包一层。
+#  1) PS 5.1 里 "$v:" 会被当成「驱动器限定变量引用」直接报**解析错误** —— 不是运行时，
+#     是整份脚本一个字都跑不了。必须写 "${v}:"。默认 Win10/11 只有 PS 5.1，影响面 100%。
+#  2) 这个文件含中文，**必须存成 UTF-8 with BOM**。PS 5.1 把无 BOM 的文件按 ANSI(GBK) 读，
+#     中文注释会被解码成乱码，进而破坏后面的引号/花括号配对，报出一堆莫名其妙的语法错。
+#  3) $ErrorActionPreference="Stop" + 原生命令往 stderr 写进度（git clone / pip 都会）
+#     → 被包成 NativeCommandError 掀翻脚本。症状是"克隆其实成功了，但脚本提前退出、doctor 没跑"。
+#     所以原生命令统一走 Native() 包一层。
 
-param([switch]$CheckOnly)
+param([switch]$CheckOnly, [string]$Repo)
 
 $ErrorActionPreference = "Stop"
 
-$repo = "https://github.com/Chendestiny/text-to-infographic"
+$GH = "https://github.com/Chendestiny/text-to-infographic"
+$GITEE = "https://gitee.com/destinychen/text-to-infographic"
+$GH_PROBE = "https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/SKILL.md"
 $dest = Join-Path $env:USERPROFILE ".agents\skills\text-to-infographic"
 
 function Say($m)  { Write-Host $m }
@@ -36,9 +45,24 @@ function Native($exe, [string[]]$exeArgs) {
     }
 }
 
+# 选仓库：显式参数 > T2I_REPO 环境变量 > 探 GitHub（3 秒）> Gitee 镜像
+function PickRepo {
+    if ($Repo) { return $Repo }
+    if ($env:T2I_REPO) { return $env:T2I_REPO }
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        Invoke-WebRequest -Uri $GH_PROBE -TimeoutSec 3 -UseBasicParsing | Out-Null
+        return $GH
+    } catch {
+        return $GITEE
+    } finally {
+        $ErrorActionPreference = $old
+    }
+}
+
 Say ""
 Say "text-to-infographic installer"
-Say "repo: $repo"
 Say ""
 
 # ---- 1) locate repo (already cloned? otherwise clone) ----
@@ -46,16 +70,25 @@ if (Test-Path (Join-Path $dest "SKILL.md")) {
     Ok "skill already present: $dest"
 } elseif ($CheckOnly) {
     Warn "skill not present; would clone to $dest"
+    Say "         would use: $(PickRepo)"
 } else {
-    Say "cloning skill -> $dest"
-    $r = Native "git" @("clone", "--depth", "1", $repo, $dest)
+    $primary = PickRepo
+    $others = @($GH, $GITEE) | Where-Object { $_ -ne $primary }
+    Say "repo: $primary"
+    foreach ($r in @($primary) + $others) {
+        Say "cloning skill -> $dest"
+        Native "git" @("clone", "--depth", "1", $r, $dest) | Out-Null
+        if (Test-Path (Join-Path $dest "SKILL.md")) { Ok "cloned from $r"; break }
+        Warn "clone failed from $r"
+        if (Test-Path $dest) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue }
+    }
     if (-not (Test-Path (Join-Path $dest "SKILL.md"))) {
-        Fail "clone failed (git missing? no network? proxy?)"
+        Fail "clone failed from both mirrors (git missing? network? proxy?)"
         Hint "装 git：winget install Git.Git"
         Hint "或手动下载 zip 解压到 $dest"
+        Hint "也可以指定仓库：.\install.ps1 -Repo <git url>"
         exit 1
     }
-    Ok "cloned"
 }
 
 # ---- 2) python ----
