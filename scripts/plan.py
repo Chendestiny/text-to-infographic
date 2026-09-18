@@ -54,12 +54,22 @@ def split_sections(text, level):
     return out
 
 
+KEY_RE = re.compile(r"\*\*|重点|关键|核心|必看|★")
+
+
 def pack(chunks, target):
-    """把若干块按目标字数打包成页（尽量不跨块切）。chunks = [(标题, 汉字数)]"""
+    """把若干块按目标字数打包成页（尽量不跨块切）。chunks = [(标题, 汉字数)]
+
+    ★ 带重点标记的子节（`**` / 重点 / 关键 / 核心 / 必看 / ★）**单独成页**：
+    实测 agent 会因为这些被合并而推翻脚本（原文自己标了重点，合并就是丢重点）。
+    """
     pages, cur = [], []
     for t, c in chunks:
+        if KEY_RE.search(t) and cur:          # 重点块不跟别人挤
+            pages.append(cur)
+            cur = []
         cur.append((t, c))
-        if sum(x[1] for x in cur) >= target:
+        if KEY_RE.search(t) or sum(x[1] for x in cur) >= target:
             pages.append(cur)
             cur = []
     if cur:
