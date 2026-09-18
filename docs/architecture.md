@@ -103,3 +103,39 @@
 | `scripts/doctor.py` | 环境自检（含渲染后端预检） |
 | `templates/contracts.yaml` | 每种版式的字数预算（**契约本体**） |
 | `assets/style.md` | 视觉常量（配色、线宽、字号）的说明 |
+
+
+## 文字排版：为什么是 DOM，而不是 SVG `<text>`
+
+SVG `<text>` **没有文字排版能力**：不折行、没有 `text-overflow`、没有"按内容缩字号"，
+一行 `<text>` 就是一串按坐标摆好的字形。于是"折行/居中/省略/缩放"全得自己算 ——
+`wrap_text` / `fit` / 每槽的字数预算 / `CALIB` 校准回环 / `textLength` 注入，
+这一整套机器都是为绕开这个限制而存在的，也是"每改一个视觉细节都要穿过几百行适配代码"的来源。
+
+改法（用户定的方向，已落地）：**手绘墨迹继续用 SVG，文字交给 DOM**。
+
+| | SVG 文字（旧） | DOM 文字（现在） |
+|---|---|---|
+| 折行 | 自己算（`wrap_text`） | `overflow-wrap: break-word` |
+| 行数上限 | 自己算 + 截断成「…」 | `-webkit-line-clamp` |
+| 垂直居中 | 自己算基线 | flex `align-items: center` |
+| 字号自适应 | 自己估宽度 + 浏览器实测回写 | 一条 JS 循环（`scrollHeight > 槽高` → 缩 1px） |
+| 高亮 `[[词]]` | 蜡笔色带（手工定位） | `.hl` 的 `::before` 蜡笔底色（同一套视觉） |
+| 缺陷类别 | 孤字 / 劈词 / 压框线 / 容量随数量变化… 全靠自己算 | 折行由浏览器保证，只剩"真放不下"要人改文案 |
+
+实现要点：
+- 版式**只画墨迹**（`pen_box` / `arrow` / `dash_box`…），文字用 `_reg_slot(x, y, w, h, text, size, clamp)` 登记
+- `render_card` 把 stage 包进 `.stagewrap`，覆盖一层绝对定位的 `.slots`；坐标系必须同源（`.stage` 的 margin 归零）
+- 页面尾部注入 autofit 脚本：**与槽盒子比**（`el.scrollHeight > 槽.clientHeight`），不是与文字自己比
+- 门禁侧：`measure.py` 收集 `rep.slots`（渲染矩形 / 计量字号 / 是否溢出 / 行盒），
+  报 `dom-overflow`（真放不下）与 `dom-orphan`（末行 ≤2 字或 <20% 宽）；
+  并把 DOM 槽纳入几何求交（`crosses-box` / `crosses-line` / `overlap`），与 SVG 文字对等
+
+**迁移状态**（`text: "dom"` 时代已经过去，现在没有开关）：
+
+| 版式 | 状态 |
+|---|---|
+| flow / chain / compare | ✅ 已迁（SVG 文字分支已删除） |
+| bullets | ✅ 本来就是 HTML 行（浏览器排版） |
+| hub / arch / cycle / spectrum / timeline / matrix / pyramid / cover（含四宫格 mini） | 迁移中 |
+| raw | 透传原始 SVG，不涉及 |
