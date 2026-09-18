@@ -86,7 +86,13 @@ def main():
         print("④ 像素门   （--no-render：跳过出图与实测）")
         o = ""
     else:
-        o, _ = run("pipeline.py", spec, "-o", out)
+        o, rc_pipe = run("pipeline.py", spec, "-o", out)
+        # ★ pipeline 崩了必须算硬问题：原来只扫输出里的关键词，脚本抛异常时既没有
+        #   measure: 也没有 needs_llm，于是"硬问题 0 处"是**假绿**（实测踩过：
+        #   ink.py 被裁坏、palette 未定义，run.py 还报可以交付）
+        if rc_pipe != 0 and "measure:" not in o:
+            hard.append("像素门｜pipeline 异常退出（exit=%d）：%s"
+                        % (rc_pipe, (o.strip().splitlines() or [""])[-1][:110]))
     for l in o.splitlines():
         s = l.strip()
         if re.search(r"measure:|verify:|降级 |耗时", s):
