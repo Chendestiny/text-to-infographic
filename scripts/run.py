@@ -17,6 +17,7 @@
 退出码：0 = 可以交付；1 = 有硬问题
 """
 import argparse
+import io
 import os
 import re
 import subprocess
