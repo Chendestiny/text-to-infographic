@@ -18,7 +18,8 @@ version: 1.0.0
 | 什么时候用 | 命令 | 它给你什么 |
 |---|---|---|
 | 决定拆几页 | `python scripts/plan.py <文章.md>` | 页数建议 + 区间 + **每页骨架**（别自己推） |
-| 写完规格后对账 | `python scripts/plan.py <文章.md> --check <spec.json>` | 张数差几张、差在哪；偏离要写进 `meta.plan_note` |
+| 写完规格后过门（一次搞定） | `python scripts/check.py <spec.json> --article <文章.md>` | 预检 + 页数对账 + 规格门 + 像素门，一份结论 |
+| 写文案**之前**看预算 | `python scripts/capacity.py <spec.json> --budget` | 每槽能放几个汉字（按真实几何算） |
 | 写完规格 | `python scripts/validate.py <spec.json>` | 几何硬违规 / 密集档提示 / 建议值提示 |
 | 想知道某槽能放几个字 | `python scripts/capacity.py <spec.json>` | 每槽 ok / dense / overflow 的**真实几何** |
 | 出图 | `python scripts/pipeline.py <spec.json> -o <out>` | PNG + **四道门** + 降级报告 |
@@ -52,6 +53,15 @@ python scripts/plan.py <文章.md> --check <spec.json>
 **理由要具体到"骨架里哪一页承载不了原文的哪个重点"**，不是"我觉得 9 张好看"。
 
 **第 3 步 · 写规格**：从 [examples/](examples/) 抄一个形状再改文案。
+**先把骨架写成规格（版式和条数定了、文案留空），跑一次预算表**：
+
+```bash
+python scripts/capacity.py <骨架.json> --budget     # 每槽能放几个汉字，按真实几何算
+```
+
+这一步不是仪式 —— 实测（文章2 第 1 轮）agent 是**写完文案才发现**"cover 的 chips 只放得下
+2 个汉字、flow 5 节点的标签只剩 ~117px、cycle 的 desc 只有 250px 宽"，于是返工 4 轮、28 次命令。
+先看预算，这些返工在写之前就该消失。
 - 版式字段表在 [docs/layouts.md](docs/layouts.md)，开头还有一张**字段支持总表**
   （`note` 在 bullets / compare / cycle / raw 上写了也不渲染，规格门会拦）
 - **字数上限只是建议值 M**：真实能不能放下由几何说话。拿不准就跑 `capacity.py`
@@ -111,7 +121,11 @@ python scripts/preflight.py <spec.json>      # 孤字 / 断词 / 数量词 / 贴
 - 文字可读性有余量：那张大标题 300px 还读得对，但正文小字（24~28px）在 300px 下只剩 3px、读不了，
   所以**别低于 540px**，**720px 是默认**
 
-- **默认不看图**：preflight + 两道门过了就交付，报告里写"审美未校验（可人工过目）"
+- **默认不看图**：preflight + 几何门过了就交付，报告里写"审美未校验（可人工过目）"——这是**推荐做法**
+- 要看就**最多 1 张**（封面），把下面这段原样发给看图模型（实测：不这么写它会输出整段"图像描述"，一次 40~80 秒）：
+
+  > 只看这一张：① 有没有文字压在方框边线或箭头上？② 有没有两段文字叠在一起？
+  > ③ 配色是否协调？每问只答一行，不要写图像描述。
 - 想看观感时：`python scripts/review_sheet.py <出图目录>` 生成 720px 单张缩略图，
   **只抽查 1~2 张**（封面 + 一张内容页），一句话问清楚（别让它写描述）
 - **不要拼版**（一次问多张 → 输出变长 → 单次 >600s）、**不要逐张全看**、
