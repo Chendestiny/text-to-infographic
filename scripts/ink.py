@@ -63,6 +63,26 @@ _INK = []          # 墨迹包围盒（箭头/外框/方框），供几何布局
 # （用户架构方向：折行/省略/垂直居中/自适应缩放都是前端的事，不该用 Python 估算）
 _SLOTS = []
 
+# ★ DOM 文字总开关：打开后 txt / txt_block / hl_line 不再画 SVG 文字，而是把文字登记成槽，
+#   由浏览器排版。这样**所有版式自动迁移**，不需要逐处改调用点。
+#   （已迁移的 flow/chain/compare 自己登记槽，不走这里。）
+DOM_TEXT = True
+
+# 高亮颜色反查：parse_hl 给出的是 hex，DOM 需要 CSS 类名（y/b/p/g/gr/o）
+_NAME_BY_HEX = {}
+
+
+def _hl_key(hex_or_name):
+    """把调色板 hex / 名字换成高亮类名字母（y/b/p/g/gr/o）。"""
+    if not hex_or_name:
+        return "y"
+    if hex_or_name in COLOR_KEY:          # 已经是字母
+        return hex_or_name
+    for letter, name in COLOR_KEY.items():
+        if PAL.get(name) == hex_or_name or name == hex_or_name:
+            return letter
+    return "y"
+
 
 def _reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weight=None):
     """登记一个 DOM 文字槽：位置 + 尺寸 + 字号 + 行数上限，其余交给浏览器。"""
@@ -84,11 +104,14 @@ DOM_SLOT_CSS = """
 .slots .s.left { justify-content: flex-start; }
 .slots .t {
   /* break-word（不是 anywhere）：整词放不下才断，绝不在词内断 —— 与 Python 侧一致 */
+  width: 100%; box-sizing: border-box;   /* 必须填满槽宽：否则 flex 里收缩到内容宽，折行不受控 */
   overflow-wrap: break-word; word-break: normal; line-height: 1.26; text-align: center;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--clamp, 2);
   overflow: hidden; color: %C_TEXT%; font-family: %FONT%;
 }
 .slots .s.left .t { text-align: left; }
+.slots .s.right { justify-content: flex-end; }
+.slots .s.right .t { text-align: right; }
 """
 
 # 自适应缩放：浏览器实测 scrollHeight/clientHeight → 缩字号到刚好放下。
@@ -384,6 +407,15 @@ def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
     if anchor not in ("start", "middle", "end"):
         raise ValueError("text-anchor 只能是 start/middle/end，收到 %r（center→middle，left→start）"
                          % anchor)
+    if DOM_TEXT and cap:
+        # 自动登记为 DOM 槽：矩形由本函数的参数推导（anchor 决定水平对齐方式）
+        _w = maxw or (tw(s, size) * 1.06 + 6)
+        _x0 = x - _w / 2.0 if anchor == "middle" else (x if anchor == "start" else x - _w)
+        _reg_slot(_x0, y - size * 0.63, _w, size * 1.26, s, size, clamp=1,
+                  align={"middle": "center", "start": "start", "end": "right"}[anchor],
+                  min_size=max(12, int(size * 0.55)), weight=weight)
+        _reg_text(s)
+        return ""
     if maxw and cap:
         # ★ 登记的是**设计字号**（fit 之前）—— 这样后面才能判断
         # "标准档放不下、密集档放得下"，而不是拿已经缩过的字号自欺
@@ -475,6 +507,15 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     # 引擎把尾巴截成「…」时两边都是半句话，门永远发现不了截断
     # （实测踩过：timeline 节点说明「…个簇，只扫最近的簇」被吃掉后半句，门报干净）。
     _reg_text(s)
+    if DOM_TEXT:
+        # 整块登记成一个槽：高度 = 行数 × 行高，宽度 = maxw
+        _n = max_lines or 1
+        _h = _n * size * 1.26
+        _x0 = cx if align == "start" else cx - maxw / 2.0
+        _reg_slot(_x0, y - _h / 2.0, maxw, _h, s, size, clamp=_n,
+                  align="start" if align == "start" else "center",
+                  min_size=max(12, int(size * 0.55)))
+        return ""
     _reg_cap(tag, s, size, maxw, max_lines or 1)
     lines = wrap_text(s, size, maxw)
     if max_lines and len(lines) > max_lines:
@@ -586,6 +627,21 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
       'MCP' 与 ' 的解法' 重叠 791 px²。色带照旧按估算画（蜡笔笔触本来就有 ±9px
       抖动，漂移看不出来），但文字位置漂移一眼就能看见。
     """
+    if DOM_TEXT:
+        # 高亮：parse_hl 已经把 [[…]] 拆成 (文本, 颜色)，这里**重建**成 [[文本|字母]]，
+        # 交给 DOM 侧的 _inline 画成 .hl 蜡笔底色（视觉与 SVG 侧一致）。
+        _pieces = []
+        for _t, _c in parts:
+            _pieces.append("[[%s|%s]]" % (_t, _hl_key(_c)) if _c else _t)
+        _plain = "".join(_pieces)
+        _tw_est = sum(tw(t, size) for t, _ in parts) * 1.06
+        _w = maxw or (_tw_est + 12)
+        _x0 = cx - _w / 2.0 if align == "center" else cx
+        _reg_slot(_x0, y - size * 0.63, _w, size * 1.26, _plain, size, clamp=1,
+                  align="center" if align == "center" else "start",
+                  min_size=max(12, int(size * 0.55)))
+        _reg_text(_plain)
+        return ""
     _reg_cap(tag, "".join(t for t, _ in parts), size, maxw, 1)
     total = sum(tw(t, size) for t, _ in parts) * 1.06   # 实际渲染宽估计
     if maxw and total > maxw:

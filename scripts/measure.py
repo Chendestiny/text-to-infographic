@@ -114,6 +114,7 @@ MEASURE_FN = """(function(){
       fs: cs ? parseFloat(cs.fontSize) : 0,
       sh: t ? t.scrollHeight : 0, ch: slotH, sw: t ? t.scrollWidth : 0,
       lines: lines, lastW: +lastW.toFixed(1),
+      clamp: parseInt((getComputedStyle(el).getPropertyValue('--clamp') || '1'), 10) || 1,
       over: over
     });
   }
@@ -318,8 +319,8 @@ def analyze(rep, boxes=None, texts=None, ink=None):
         # （早先写 25% 太严，把"末行是个短词"也算进来，示例里会刷一堆）
         _lw = sl.get("lastW", 1e9)
         _sw = max(1.0, sl.get("w", 1))
-        if (sl.get("lines") or 0) >= 2 and (_lw < 0.20 * _sw
-                                            or _lw < 2.2 * max(1.0, sl.get("fs", 20))):
+        if (sl.get("clamp") or 1) >= 2 and (sl.get("lines") or 0) >= 2 and (
+                _lw < 0.20 * _sw or _lw < 2.2 * max(1.0, sl.get("fs", 20))):
             issues.append({"kind": "dom-orphan", "tag": "dom",
                            "text": sl.get("text", "")[:30],
                            "note": "末行只剩 %.0f%% 宽（共 %d 行）→ 孤字，建议改短文案"
@@ -332,8 +333,15 @@ def analyze(rep, boxes=None, texts=None, ink=None):
 
     # ---- DOM 文字也参与几何求交（与 SVG 文字对等）----
     # 原来几何门只看 rep.svg（SVG <text>），DOM 文字不在里面 → "压框线/两段压住"反而没人管。
-    dom_rects = [(sl["left"], sl["top"], sl["w"], sl["h"], sl.get("text", ""))
-                 for sl in (rep.get("slots") or [])]
+    # ★ 用"有效内容带"而不是槽矩形：多行槽的高度按**最大行数**给（例如 clamp=4 → 161px），
+    #   而文字实际可能只占 2 行（64px）并居中 —— 渲染是对的，但矩形比内容高一截，
+    #   会误报"两段文字互相压住"（实测 matrix 格内标题/说明）。
+    def _eff(sl):
+        h = sl["h"]
+        eh = min(sl.get("sh") or h, h)
+        return (sl["left"], sl["top"] + (h - eh) / 2.0, sl["w"], eh, sl.get("text", ""))
+
+    dom_rects = [_eff(sl) for sl in (rep.get("slots") or [])]
     if ink and dom_rects:
         for (dx, dy, dw, dh, dtext) in dom_rects:
             for k in ink:
@@ -353,7 +361,12 @@ def analyze(rep, boxes=None, texts=None, ink=None):
         for j in range(i + 1, len(dom_rects)):
             a, b = dom_rects[i], dom_rects[j]
             ov = _overlap((a[0], a[1], a[2], a[3]), {"x": b[0], "y": b[1], "w": b[2], "h": b[3]})
-            if ov > 4 and ov > 0.08 * max(1.0, min(a[2] * a[3], b[2] * b[3])):
+            # 与 SVG 侧同一套判据：矩形含 ascent/descent，紧邻两行会"盒重叠但字不重叠"，
+            # 所以要求**纵横向都实质重叠**才报（只比面积会刷一堆误报，实测踩过）
+            ox2 = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+            oy2 = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+            if (ov > 4 and ov > 0.08 * max(1.0, min(a[2] * a[3], b[2] * b[3]))
+                    and oy2 > 0.35 * min(a[3], b[3]) and ox2 > 0.25 * min(a[2], b[2])):
                 issues.append({"kind": "overlap", "tag": "dom", "text": b[4][:30],
                                "note": "两段 DOM 文字互相压住：%r × %r" % (a[4][:12], b[4][:12])})
 
