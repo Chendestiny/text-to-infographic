@@ -62,17 +62,16 @@ cards:
   - {text: '[[模型轻量调用与微调]]', fill: blue}
   - {text: '[[工程化落地与运维]]', fill: pink}
   note: 三块互相关联，学习侧重完全不同
-- layout: flow
+- layout: bullets
   title: Agent 全流程开发
   subtitle: 核心主干，[[细分五块]]
-  nodes:
-  - {text: 基础认知}
-  - {text: 提示词}
-  - {text: 工具调用, fill: yellow}
-  - {text: RAG}
-  - {text: 工程化}
-  note: 工具调用涵盖 FC / Tools Calling / MCP
-  note2: 高阶：循环死锁 / 重试 / 流式 / 人在回路
+  items:
+  - {head: 基础认知}
+  - {head: 提示词}
+  - {head: 工具调用, fill: yellow, desc: 涵盖 FC / Tools Calling / MCP}
+  - {head: RAG}
+  - {head: 工程化}
+  - {head: 高阶坑, desc: 循环死锁 / 重试 / 流式 / 人在回路}
 - layout: timeline
   title: 落地学习路线：四个阶段
   subtitle: 把理论沉淀成[[实战能力]]

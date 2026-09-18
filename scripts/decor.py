@@ -6,12 +6,13 @@
     齿轮系
       gear1    单齿轮 · 空心
       gear2    双齿轮 · 空心
-      gear2f1  双齿轮 · 小的那个蜡笔灰填充
       gear2f2  双齿轮 · 两个都蜡笔灰填充
     星系
       star4    四角星 · 空心
       star5    五角星 · 空心
       star5f   五角星 · 蜡笔黄填充
+    云
+      cloud    云朵 · 蜡笔蓝填充（2026-09-18 新增）
 
 设计约定
   1. 纯 SVG path/line，无位图、无文字，可任意放缩
@@ -32,6 +33,7 @@ INK = "#5C584F"
 SW = 6.0
 CRAYON_GRAY = "#CFCBC0"
 CRAYON_YELLOW = "#FFE04D"
+CRAYON_BLUE = "#7FCBEF"      # 云朵：用户指定用蓝色涂
 
 _uid = [0]
 
@@ -160,24 +162,41 @@ def star5f(x, y, size, seed=1, opacity=0.62):
     return star5(x, y, size, seed, opacity, fill=CRAYON_YELLOW)
 
 
+def cloud(x, y, size, seed=1, opacity=0.55):
+    """云朵 · 蓝色蜡笔填充（用户指定）。
+
+    形状：一圈"鼓包"（半径按 sin(3θ) 起伏）—— 比画三段圆弧简单，且手绘抖动后
+    更像云；fill 走 _shape 的蜡笔填充（实色 + 白斜纹），不是死板纯色块。
+    """
+    r = _rnd(seed)
+    n = 24
+    pts = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        rad = size * (0.60 + 0.30 * math.sin(3 * a) + r.uniform(-0.04, 0.04))
+        pts.append((x + rad * 1.25 * math.cos(a), y + rad * 0.78 * math.sin(a)))
+    return _shape(pts, seed, size * 0.10, fill=CRAYON_BLUE, op=opacity)
+
+
 DECOR = {
+    # ★ 用户要求：删掉一种齿轮（gear2f1「小的蜡笔灰」—— 填充件在低透明度下最显脏）
     "gear1": gear1,
     "gear2": gear2,
-    "gear2f1": gear2f1,
     "gear2f2": gear2f2,
     "star4": star4,
     "star5": star5,
     "star5f": star5f,
+    "cloud": cloud,          # 新增：蓝色云朵
 }
 
 DESC = {
     "gear1": "单齿轮 · 空心",
     "gear2": "双齿轮 · 空心",
-    "gear2f1": "双齿轮 · 小的蜡笔灰",
     "gear2f2": "双齿轮 · 都蜡笔灰",
     "star4": "四角星 · 空心",
     "star5": "五角星 · 空心",
     "star5f": "五角星 · 蜡笔黄",
+    "cloud": "云朵 · 蜡笔蓝",
 }
 
 

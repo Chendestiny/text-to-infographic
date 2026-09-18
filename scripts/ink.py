@@ -37,7 +37,7 @@ PAL = {"yellow": "#FFE04D", "blue": "#7FCBEF", "pink": "#F79BB0",
        "green": "#9FE0B8", "orange": "#FFC48C", "gray": "#CFCBC0"}
 C_HEAD = "#141414"
 C_TEXT = "#1F1F1F"
-C_NOTE = "#6F6F6F"
+C_NOTE = "#4A4A4A"                      # 小字（备注/说明）：加黑，浅灰在手机上看不清
 
 # 字体栈：带一套跨三平台的中文无衬线回退，不写死系统字体
 FONT_SANS = ("'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',"
@@ -999,7 +999,7 @@ def layout_spectrum(card, seed):
     stops = card.get("gradient") or [(PAL["blue"], "0"), (PAL["pink"], "1")]
     parts.append(_poly_fill([(bx - 10, 152), (bx + bw + 10, 152),
                              (bx + bw + 10, 254), (bx - 10, 254)],
-                            seed + 5, 2.0, "#FFFFFF"))     # 箭头底色：白
+                            seed + 5, 2.0, None))           # 箭头底色：透明（原来填白）
     parts.append(grad_arrow(bx, 168, bw, 70, "specgrad%d" % seed, stops))
     ends = card.get("ends") or []
     if len(ends) == 2:
@@ -1078,6 +1078,11 @@ def layout_flow(card, seed):
     nodes = card.get("nodes", [])
     pal = Palette(seed)
     n = max(1, len(nodes))
+    if n > 4:
+        # ★ 用户要求：flow 节点 ≤4，超过就换版式（5 个时每格只剩 ~116px、
+        #   标签只能放 2 个汉字，怎么调都不好看）
+        WARN.append("[flow] 节点 %d 个超过 4：格宽不足以放下标签，**建议改用 chain（竖向）"
+                    "或 bullets（清单）**；仍按 flow 渲染但会偏挤" % n)
     avail = 900
     bx = BOX_INSET
     bw = W_INNER - 2 * bx
@@ -1529,7 +1534,8 @@ h1{font-size:%H1%px;line-height:1.14;text-align:center;color:%C_HEAD%;font-weigh
       font-family:%FONT_EMOJI%,'KuaiLe',%FONT_SANS%;font-size:30px;color:#9A9A96;}
 """
 
-DECO_VARIANTS = ["gear1", "gear2", "gear2f1", "gear2f2", "star4", "star5", "star5f"]
+# 用户要求：删掉一种齿轮（gear2f1），新增蓝色云朵
+DECO_VARIANTS = ["gear1", "gear2", "gear2f2", "star4", "star5", "star5f", "cloud"]
 DECO_SLOTS = [[(952, 64), (958, 692), (58, 1248)],
               [(46, 64), (958, 692), (948, 1248)]]
 
@@ -1538,18 +1544,21 @@ def _deco_layer(idx):
     from decor import decor
     parts = ["<svg class='deco' width='%d' height='%d' viewBox='0 0 %d %d' "
              "xmlns='http://www.w3.org/2000/svg'>" % (W_CARD, H_CARD, W_CARD, H_CARD)]
-    variants = [DECO_VARIANTS[(idx * 1) % 7], DECO_VARIANTS[(idx * 2 + 3) % 7],
-                DECO_VARIANTS[(idx * 3 + 5) % 7]]
+    nv = len(DECO_VARIANTS)
+    variants = [DECO_VARIANTS[(idx * 1) % nv], DECO_VARIANTS[(idx * 2 + 3) % nv],
+                DECO_VARIANTS[(idx * 3 + 5) % nv]]
     slots = DECO_SLOTS[idx % 2]
     for i, (name, (x, y)) in enumerate(zip(variants, slots)):
-        size = (30, 34, 38)[i]
+        size = (24, 27, 30)[i]          # 用户要求：装饰小一点（原 30/34/38）
         pair = name.startswith("gear2")
         if pair:
             x -= size * 1.05
         lo, hi = 30 + size * 1.05, W_CARD - 32 - (size * 1.25 if pair else size)
         x = max(lo, min(hi, x))
         y = max(24 + size * 1.15, min(H_CARD - 24 - size * 1.15, y))
-        parts.append(decor(name, x, y, size, 300 + i * 7 + idx, 0.42 if pair else 0.46))
+        # 透明度 +30%（0.42/0.46 × 0.7）：装饰不能抢正文
+        parts.append(decor(name, x, y, size, 300 + i * 7 + idx,
+                           0.29 if pair else 0.32))
     parts.append("</svg>")
     return "".join(parts)
 
