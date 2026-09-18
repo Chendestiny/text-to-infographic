@@ -503,6 +503,33 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
         out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag, cap=False,
                        anchor="start" if align == "start" else "middle"))
     return ""
+
+# ---------------------------------------------------------------- 高亮语法
+# 规格里的文字支持 [[关键词]] 或 [[关键词|b]] 表示加蜡笔底色，b=blue y=yellow p=pink g=gray
+HL_RE = re.compile(r"\[\[(.+?)(?:\|([a-z]{1,2}))?\]\]")
+COLOR_KEY = {"y": "yellow", "b": "blue", "p": "pink", "g": "gray",
+             "gr": "green", "o": "orange"}
+
+
+class Palette:
+    """颜色轮换器。
+
+    用户反馈：整页全黄太单调。方框填色和蜡笔色带都从这里按顺序取，
+    一页之内蓝→黄→粉→灰轮着来；跨卡用不同起点，卡与卡之间也不同。
+    规格里显式指定的颜色（fill / [[x|b]]）永远优先，且不消耗轮换。
+    """
+
+    ORDER = ["blue", "yellow", "pink", "green", "gray", "orange"]
+
+    def __init__(self, start=0):
+        self.i = start % len(self.ORDER)
+
+    def next(self):
+        c = PAL[self.ORDER[self.i % len(self.ORDER)]]
+        self.i += 1
+        return c
+
+
 def parse_hl(text, palette=None, plain=False):
     """把 '① 注入 [[tools 定义]]' 解析成 [(片段, 底色或 None), ...]。
 
@@ -603,6 +630,8 @@ def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
     plain = "".join(t for t, _ in parts)
     anc = {"center": "middle", "left": "start", "right": "end"}.get(align, align)
     return ""
+
+# ---------------------------------------------------------------- 版式
 def h1_html(title):
     """主标题：超宽就缩字号，**绝不折行**。
 

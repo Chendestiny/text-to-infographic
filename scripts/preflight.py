@@ -82,27 +82,6 @@ def check(spec):
         ink.render_card(card, i - 1, len(cards), meta, font)   # 副作用：填 _CAPS
         slots = [dict(c) for c in ink._CAPS]
 
-        # ① 孤字 / ③ 断词：从折行结果算
-        for s in slots:
-            text, size, maxw, ml = s["text"], s["size"], s["maxw"], s["max_lines"]
-            if not text or ml <= 1:
-                continue
-            lines = ink.wrap_text(text, size, maxw)
-            if len(lines) < 2:
-                continue
-            last_w = ink.tw(lines[-1].strip(), size)
-            # 孤字：末行只剩 1~2 个字，或占宽不到 20%（'私有化' 那种 3 字 28% 不算）
-            if len(lines[-1].strip()) <= 2 or last_w < 0.2 * maxw:
-                out.append({"page": page, "tag": s["tag"], "kind": "孤字",
-                            "detail": "折 %d 行，末行只剩 %r（占宽 %.0f%%）"
-                                      % (len(lines), lines[-1].strip(), 100 * last_w / maxw),
-                            "text": text[:40]})
-            for a, b in zip(lines, lines[1:]):
-                ma, mb = re.search(r"[A-Za-z0-9_\-]+$", a), re.match(r"[A-Za-z0-9_\-]+", b)
-                if ma and mb and (ma.group(0) + mb.group(0)) in text:
-                    out.append({"page": page, "tag": s["tag"], "kind": "断词",
-                                "detail": "%s | %s" % (ma.group(0), mb.group(0)),
-                                "text": text[:40]})
 
         # ② 数量词 vs 实际条数 —— **只看 title**，且跳过「第 N 条」这类序数引用。
         # 扫 subtitle/note 会误伤："一个最小例子" / "拿一点召回" / "两条理由" 都不是在数条目。
@@ -119,12 +98,7 @@ def check(spec):
                             "detail": "标题写「%s」= %d，这一页实际有 %d 条并列项"
                                       % (tok, v, n),
                             "text": title.strip()[:40]})
-        # ④ 贴边（>90%）提示
-        for s in slots:
-            if s["maxw"] and ink.tw(s["text"], s["size"]) / s["maxw"] > 0.9:
-                out.append({"page": page, "tag": s["tag"], "kind": "贴边",
-                            "detail": "占宽 %.0f%%" % (100 * ink.tw(s["text"], s["size"]) / s["maxw"]),
-                            "text": s["text"][:40]})
+
     return out
 
 
@@ -150,9 +124,9 @@ def main():
               % (f["page"], f["tag"], f["kind"], f["detail"], f["text"]))
     if not found:
         print("  ✓ 孤字 / 断词 / 数量词 三类都没问题")
-    print("\n说明：压字·出框由像素门（measure）实测，配色·疏密才需要看图 —— "
-          "而看图很贵（实测 720px 单张一次调用 ~103s，拼版更慢），所以只在"
-          "「想看观感」时抽查 1~2 张。")
+    print("\n说明：孤字（末行只剩 1~2 字）已改由**浏览器量真实行盒**判定（measure.py 的 dom-orphan）；"
+          "断词在 DOM 侧不可能发生（overflow-wrap: break-word）；压字·出框由像素门实测。"
+          "本文件只保留纯文字级的检查（数量词）。")
     return 1 if hard else 0
 
 
