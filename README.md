@@ -31,6 +31,20 @@
 帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
 ```
 
+**国内网络：走 Gitee 镜像（内容与 GitHub 同步）**
+
+```text
+帮我安装 text-to-infographic：irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1 | iex
+```
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://gitee.com/destinychen/text-to-infographic/raw/main/install.sh | bash
+```
+
+> **两个仓库随便挑一条**：脚本会先探一下 GitHub（3 秒），探不通就自动改走 Gitee 镜像；
+> 克隆失败还会在两个镜像之间自动重试。想指定仓库：`-Repo <url>`（Windows）/ `--repo <url>`，
+> 或环境变量 `T2I_REPO`。
+>
 > 这是个 skill，装它、用它都让 Agent 兜底：脚本会 clone 到 `~/.agents/skills/`、探 Python / Chrome / 字体、
 > 缺 `pyyaml` 按需补、最后跑一遍 `doctor`。只想体检不写入：加 `-CheckOnly`（Windows）/ `--check-only`。
 

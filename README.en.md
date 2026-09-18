@@ -32,6 +32,20 @@ article.md ──> [LLM] spec.json ──> validate ──> build ──> measur
 帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
 ```
 
+**Behind the Great Firewall: use the Gitee mirror** (same content, kept in sync with GitHub)
+
+```text
+帮我安装 text-to-infographic：irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1 | iex
+```
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://gitee.com/destinychen/text-to-infographic/raw/main/install.sh | bash
+```
+
+> **Pick either line** — the script probes GitHub first (3 s) and falls back to the Gitee mirror when
+> it cannot reach it; if a clone fails it retries against the other mirror. Pin a repo explicitly with
+> `-Repo <url>` (Windows) / `--repo <url>`, or the `T2I_REPO` environment variable.
+>
 > This is a skill, so let the agent drive both the install and the usage: the script clones into
 > `~/.agents/skills/`, probes Python / Chrome / the bundled font, installs `pyyaml` if it is
 > missing, and finally runs `doctor`. Inspect only, write nothing: `-CheckOnly` (Windows) /
