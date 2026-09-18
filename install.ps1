@@ -1,11 +1,19 @@
-# text-to-infographic installer (Windows)
+﻿# text-to-infographic installer (Windows)
 # Usage:
 #   irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
 #   .\install.ps1 -CheckOnly     # dry run, writes nothing
+#
+# 踩过的坑（都在真机上复现过，别再改回去）：
+#  1) PS 5.1 里 "$v:" 会被当成「驱动器限定变量引用」直接报错，必须写 "${v}:"。
+#     影响面极大：默认 Win10/11 只有 Windows PowerShell 5.1，一行安装会必挂。
+#  2) $ErrorActionPreference="Stop" + 原生命令把进度写到 stderr（git clone / pip 都会）
+#     → PowerShell 包成 NativeCommandError 并终止脚本。症状是"克隆其实成功了，但脚本
+#     提前退出、doctor 没跑"。所以原生命令统一走 Native() 包一层。
 
 param([switch]$CheckOnly)
 
 $ErrorActionPreference = "Stop"
+
 $repo = "https://github.com/Chendestiny/text-to-infographic"
 $dest = Join-Path $env:USERPROFILE ".agents\skills\text-to-infographic"
 
@@ -14,6 +22,19 @@ function Ok($m)   { Write-Host "  [ok]   $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "  [warn] $m" -ForegroundColor Yellow }
 function Fail($m) { Write-Host "  [FAIL] $m" -ForegroundColor Red }
 function Hint($m) { Write-Host "         -> $m" -ForegroundColor DarkGray }
+
+# 跑原生命令：临时放宽 ErrorActionPreference，免得 stderr 的一行进度把整个脚本掀翻。
+# 返回 @{code=退出码; out=标准输出}
+function Native($exe, [string[]]$exeArgs) {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & $exe @exeArgs 2>&1 | ForEach-Object { "$_" }
+        return @{ code = $LASTEXITCODE; out = ($out -join "`n") }
+    } finally {
+        $ErrorActionPreference = $old
+    }
+}
 
 Say ""
 Say "text-to-infographic installer"
@@ -27,8 +48,13 @@ if (Test-Path (Join-Path $dest "SKILL.md")) {
     Warn "skill not present; would clone to $dest"
 } else {
     Say "cloning skill -> $dest"
-    git clone --depth 1 $repo $dest 2>$null
-    if (-not (Test-Path (Join-Path $dest "SKILL.md"))) { Fail "clone failed (git missing?)"; exit 1 }
+    $r = Native "git" @("clone", "--depth", "1", $repo, $dest)
+    if (-not (Test-Path (Join-Path $dest "SKILL.md"))) {
+        Fail "clone failed (git missing? no network? proxy?)"
+        Hint "装 git：winget install Git.Git"
+        Hint "或手动下载 zip 解压到 $dest"
+        exit 1
+    }
     Ok "cloned"
 }
 
@@ -39,24 +65,28 @@ foreach ($c in @("python", "python3", "py")) {
     if ($found) { $py = $found.Source; break }
 }
 if ($py) {
-    $v = & $py -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null
-    Ok "python $v: $py"
+    $r = Native $py @("-c", "import sys;print('%d.%d' % sys.version_info[:2])")
+    # ★ 必须 ${v}: 而不是 $v: —— 见文件头坑 1
+    Ok "python $($r.out.Trim()): $py"
+    & $py -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,8) else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) { Warn "python 低于 3.8；脚本用的是标准库，3.8+ 才保证可用" }
 } else {
     Fail "python not found"
     Hint "winget install Python.Python.3.12   (then reopen the terminal)"
-    if ($CheckOnly) { exit 1 } else { exit 1 }
+    exit 1
 }
 
 # ---- 3) yaml support (optional; .json specs need nothing) ----
-& $py -c "import yaml" 2>$null
-if ($LASTEXITCODE -eq 0) {
+$r = Native $py @("-c", "import yaml")
+if ($r.code -eq 0) {
     Ok "pyyaml present (.yaml specs available)"
 } else {
     Warn "pyyaml missing: .yaml specs need it; .json specs need nothing"
     Hint "pip install pyyaml"
     if (-not $CheckOnly) {
-        & $py -m pip install --quiet pyyaml
-        if ($LASTEXITCODE -eq 0) { Ok "pyyaml installed" } else { Warn "auto-install failed; use .json specs or install manually" }
+        $r2 = Native $py @("-m", "pip", "install", "--quiet", "pyyaml")
+        if ($r2.code -eq 0) { Ok "pyyaml installed" }
+        else { Warn "auto-install failed; use .json specs or install manually" }
     }
 }
 
@@ -85,14 +115,16 @@ else { Warn "font missing (will degrade to system fonts)" }
 if (-not $CheckOnly) {
     Say ""
     Say "running doctor..."
-    & $py (Join-Path $dest "scripts\doctor.py")
+    $r = Native $py @((Join-Path $dest "scripts\doctor.py"))
+    Say $r.out
+    Hint "doctor 若提示「只有 CDP 后端可用」，渲染前请设：`$env:T2I_BACKEND='cdp'"
 }
 
 Say ""
 Say "next:"
-Say '  cd ' + $dest
-Say "  python scripts\build.py examples\agent-roadmap.json -o build\"
-Say "  python scripts\render.py build\ -o out\"
+Say "  把这句话发给你的 Agent（不要自己去敲命令）："
+Say "    用 text-to-infographic（$dest）"
+Say "    把 <你的文章路径> 转成小红书图文，输出到桌面"
 Say ""
-Say "agent users: just say  \"turn this article into a carousel\"  and follow SKILL.md"
+Say "  Agent 会按 SKILL.md 走五步：读文章 → 写规格 → 过规格门 → 跑流水线 → 逐张自检后交付。"
 Say ""
