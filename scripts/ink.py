@@ -80,7 +80,8 @@ DOM_SLOT_CSS = """
 .slots .s { position: absolute; display: flex; align-items: center; justify-content: center; }
 .slots .s.left { justify-content: flex-start; }
 .slots .t {
-  overflow-wrap: anywhere; word-break: break-word; line-height: 1.26; text-align: center;
+  /* break-word（不是 anywhere）：整词放不下才断，绝不在词内断 —— 与 Python 侧一致 */
+  overflow-wrap: break-word; word-break: normal; line-height: 1.26; text-align: center;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--clamp, 2);
   overflow: hidden; color: %C_TEXT%; font-family: %FONT%;
 }

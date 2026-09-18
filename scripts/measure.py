@@ -292,12 +292,18 @@ def analyze(rep, boxes=None, texts=None, ink=None):
         if h["sw"] > h["cw"] + 2:
             issues.append({"kind": "html-overflow", "text": h["s"],
                            "sw": h["sw"], "cw": h["cw"]})
-    # ---- DOM 文字槽：浏览器实测的溢出（DOM 模式下最权威的一类）----
+    # ---- DOM 文字槽：浏览器实测的溢出与孤字（DOM 模式下最权威的一类）----
     for sl in rep.get("slots") or []:
+        # 孤字：用真实行盒判 —— 折行是浏览器做的，Python 侧估不准（也不用再维护 wrap_text）
+        if (sl.get("lines") or 0) >= 2 and sl.get("lastW", 1) < 0.25 * max(1.0, sl.get("w", 1)):
+            issues.append({"kind": "dom-orphan", "tag": "dom",
+                           "text": sl.get("text", "")[:30],
+                           "note": "末行只剩 %.0f%% 宽（共 %d 行）→ 孤字，建议改短文案"
+                                   % (100.0 * sl["lastW"] / max(1.0, sl["w"]), sl["lines"])})
         if sl.get("over"):
             issues.append({"kind": "dom-overflow", "tag": "dom",
                            "text": sl.get("text", "")[:30],
-                           "note": "DOM 槽放不下：内容 %dpx 高 / 容器 %dpx（字号 %s）"
+                           "note": "DOM 槽放不下：内容 %dpx 高 / 容器 %dpx（字号 %s，已缩到下限）"
                                    % (sl.get("sh", 0), sl.get("ch", 0), sl.get("fs"))})
 
     # ---- 几何布局门：rect 求交（第四道门）----
