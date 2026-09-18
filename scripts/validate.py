@@ -90,12 +90,14 @@ def _check_slot(path, value, rule, issues, warnings):
     n = eff_len(v)
     lo = rule.get("min") if isinstance(rule, dict) else None
     hi = rule.get("max") if isinstance(rule, dict) else None
-    sink = warnings if rule.get("soft") else issues
+    # ★ 长度一律只提示：契约里的 max 是**建议值 M**（写起来好看的密度），
+    # 不是墙。能不能放下由几何判定（见下面的 geometry_scan）——
+    # 早先把 M 当硬墙，导致"几何明明放得下却被判违规"和"几何放不下却放行"同时发生。
     if hi is not None and n > hi:
-        sink.append((path, "%.1f > max %s%s" % (n, hi, "（软）" if rule.get("soft") else ""),
-                     str(v)[:26]))
+        warnings.append((path, "%s > 建议 %s%s" % (n, hi, "（软）" if rule.get("soft") else ""),
+                         str(v)[:26]))
     if lo is not None and n < lo:
-        sink.append((path, "%.1f < min %s" % (n, lo), str(v)[:26]))
+        warnings.append((path, "%s < 建议 %s" % (n, lo), str(v)[:26]))
 
 
 def _walk(node, contract, path, issues, warnings):
@@ -161,6 +163,32 @@ def validate(spec, layouts):
     elif n < 3:
         warnings.append(("cards", "共 %d 页偏少：要么切太粗，要么文章本来就短" % n, ""))
 
+    # ★ 几何判定：把每张卡在内存里渲染一遍（不启浏览器），读引擎登记的真实容量。
+    # 这是唯一一条**硬墙** —— 契约里的字数只是建议值。
+    try:
+        import capacity
+        for pg in capacity.scan(spec):
+            for s in pg["slots"]:
+                if s["verdict"] == "ok":
+                    continue
+                label = "%s[%s]" % (pg["page"], s["tag"])
+                multi = s["max_lines"] > 1
+                if multi and s["verdict"] == "overflow":
+                    why = "折行 %d 行 > 上限 %d 行，尾巴会被截成「…」（丢内容）" % (
+                        s["lines_std"], s["max_lines"])
+                elif s["verdict"] == "dense":
+                    why = "标准字号放不下、小一号字放得下（会走密集档）"
+                else:
+                    why = "单行超宽 %.0f%%，会缩到 %dpx（原 %dpx）" % (
+                        100.0 * s["w_std"] / s["maxw"] - 100, s["shrink_to"], s["size"])
+                if s.get("severity") == "hard":
+                    issues.append((label, "几何上放不下（%s）：必须改短或换版式" % why,
+                                   s["text"][:30]))
+                else:
+                    warnings.append((label, why + "，建议改短", s["text"][:30]))
+    except Exception as e:                     # 几何扫描失败不该让整道门挂掉
+        warnings.append(("geometry", "几何扫描没跑起来（%s）：只按建议值检查" % e, ""))
+
     allowed = _contract_keys(layouts, set()) | ENGINE_KEYS
     for i, card in enumerate(cards):
         layout = card.get("layout")
@@ -213,7 +241,9 @@ def main():
     # 三类问题混在一个标题下会误导 Agent，分开打
     page_warns = [w for w in warns if w[0] == "cards"]
     note_warns = [w for w in warns if "引擎不认识的字段" in w[1]]
-    text_warns = [w for w in warns if w not in page_warns and w not in note_warns]
+    dense_warns = [w for w in warns if "密集档" in w[1]]
+    text_warns = [w for w in warns
+                  if w not in page_warns and w not in note_warns and w not in dense_warns]
     if page_warns:
         print("页数提示（%d 处）：" % len(page_warns))
         for path, msg, sample in page_warns:
@@ -222,8 +252,12 @@ def main():
         print("\n字段提示（%d 处）——这些字段写了不会渲染：" % len(note_warns))
         for path, msg, sample in note_warns:
             print("  %-42s %s" % (path, msg))
+    if dense_warns:
+        print("\n密集档提示（%d 处）—— 标准字号放不下、小一号字能放下，建议改短：" % len(dense_warns))
+        for path, msg, sample in dense_warns:
+            print("  %-42s %s  %s" % (path, msg, sample))
     if text_warns:
-        print("\n软约束（会自动换行/缩字，建议改短）%d 处：" % len(text_warns))
+        print("\n超过建议字数（%d 处，几何上仍可能放得下；能短更好看）：" % len(text_warns))
         for path, msg, sample in text_warns:
             print("  %-42s %s  %s" % (path, msg, sample))
     if errors:

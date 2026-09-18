@@ -57,12 +57,27 @@ def node_build(state):
         for f in os.listdir(outdir):
             if f.startswith("card-") and f.endswith(".html"):
                 os.remove(os.path.join(outdir, f))
+    # ★ ink.WARN 逐卡归因：这个列表是模块级的，只有 build.py 会打印它，
+    # 走 pipeline 正常流程时**从来没输出过** —— 于是"缩字 / 截断 / 密集档"全是静默的
+    # （实测被外部测试抓到：hub 的 en 被从 33px 压到 21px，流程里一声不响）。
+    # 这里按卡切片，攒成本轮的降级报告。
+    ink.WARN[:] = []
+    degraded = {}
     for i, card in enumerate(state["cards"]):
+        n0 = len(ink.WARN)
         html = ink.render_card(card, i, len(state["cards"]), meta, state["font_url"])
         with io.open(os.path.join(outdir, "card-%02d.html" % (i + 1)), "w",
                      encoding="utf-8") as f:
             f.write(html)
-    state["log"].append("build: %d 页（calib=%.2f）" % (len(state["cards"]), state["calib"]))
+        new = ink.WARN[n0:]
+        if new:
+            degraded["card-%02d(%s)" % (i + 1, card.get("layout"))] = list(new)
+    state["degraded"] = degraded
+    line = "build: %d 页（calib=%.2f）" % (len(state["cards"]), state["calib"])
+    if degraded:
+        n = sum(len(v) for v in degraded.values())
+        line += "  ⚠降级 %d 处（%d 页）" % (n, len(degraded))
+    state["log"].append(line)
 
 
 def node_measure(state):
@@ -148,7 +163,7 @@ def node_render(state):
 def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
     t0 = time.perf_counter()
     state = {
-        "spec": spec_path, "meta": {}, "calib": 1.0, "issues": {},
+        "spec": spec_path, "meta": {}, "calib": 1.0, "issues": {}, "degraded": {},
         "log": [], "browser": find_browser(),
         "font_url": file_url(os.path.join(ROOT, "assets", "fonts",
                                           "ZCOOLKuaiLe-Regular.ttf")),
@@ -192,6 +207,11 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
     if verbose:
         for line in state["log"]:
             print("  " + line)
+        if state.get("degraded"):
+            print("\n  ⚠ 降级报告（不是错误，但都是「为了放下字而做的妥协」，值得看一眼）：")
+            for page, items in state["degraded"].items():
+                for w in items:
+                    print("    %s  %s" % (page, w))
         if state.get("needs_llm"):
             print("\n  ⚠ 以下文案需要 LLM 重写（脚本压不下了）：")
             for p, t in state["needs_llm"]:

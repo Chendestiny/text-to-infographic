@@ -54,6 +54,20 @@ _BOXES = []
 # 本卡登记的文字（净文本）。measure 的内容门会核对「规格里写的字是否真的出现在图上」——
 # 见 _reg_text 的注释：文字被静默吞掉时，几何检查永远发现不了。
 _TEXTS = []
+# 每个文字槽的几何登记：设计字号 / 可用宽度 / 允许行数。
+# 容量不是拍脑袋的常数 —— 它由 maxw 与字号推出来，所以契约里那 81 个手写上限
+# 只能算"建议值"，真实能不能放下由几何说话（capacity.py / 规格门都用这份登记）。
+_CAPS = []
+DENSE = 0.85        # 密集档字号系数：M~P 之间放得下的文案，用这一档渲染
+
+
+def _reg_cap(tag, text, size, maxw, max_lines=1):
+    """登记一个文字槽的几何（折行前的原文 + 设计字号 + 可用宽 + 行数上限）。"""
+    if maxw is None:
+        return
+    _CAPS.append({"tag": tag or "?", "text": strip_hl(str(text or "")),
+                  "size": int(size), "maxw": float(maxw),
+                  "max_lines": int(max_lines or 1)})
 
 WARN = []
 
@@ -254,10 +268,19 @@ def tw(s, size):
 
 
 def fit(s, size, maxw, tag=""):
-    """字号自适应：超出可用宽度就等比缩，缩过头会记 warning 供作者精简文案。"""
+    """字号自适应。三级：原字号 → 密集档（×0.85）→ 连续缩字（缩过头会记 warning）。
+
+    中间这一档是特意加的：连"缩 1px"和"整段重写"之间什么都没有的话，
+    超一点点就直接砍到 18px（实测 hub 的 en 被 33px→18px），既难看又没人知道。
+    """
     w = tw(s, size)
     if w <= maxw:
         return size
+    dense = int(size * DENSE)
+    if tw(s, dense) <= maxw:
+        WARN.append("[%s] 密集档 %dpx（原 %dpx）：标准放不下、小一号放得下｜%s"
+                    % (tag, dense, size, s[:34]))
+        return dense
     ns = int(size * maxw / w)
     if ns < 28:
         WARN.append("[%s] 缩到 %dpx（原 %dpx）｜%s" % (tag, ns, size, s[:34]))
@@ -265,7 +288,11 @@ def fit(s, size, maxw, tag=""):
 
 
 def txt(x, y, s, size=SIZES["body"], anchor="middle", fill=C_TEXT,
-        maxw=None, tag="", family=None, weight=None, textlength=None):
+        maxw=None, tag="", family=None, weight=None, textlength=None, cap=True):
+    if maxw and cap:
+        # ★ 登记的是**设计字号**（fit 之前）—— 这样后面才能判断
+        # "标准档放不下、密集档放得下"，而不是拿已经缩过的字号自欺
+        _reg_cap(tag, s, size, maxw, 1)
     if maxw:
         size = fit(s, size, maxw, tag)
     a = ""
@@ -351,7 +378,16 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     # 引擎把尾巴截成「…」时两边都是半句话，门永远发现不了截断
     # （实测踩过：timeline 节点说明「…个簇，只扫最近的簇」被吃掉后半句，门报干净）。
     _reg_text(s)
+    _reg_cap(tag, s, size, maxw, max_lines or 1)
     lines = wrap_text(s, size, maxw)
+    if max_lines and len(lines) > max_lines:
+        # ★ 先试密集档：小一号字常常刚好能塞进原定行数，胜过截成「…」
+        dsize = int(size * DENSE)
+        dlines = wrap_text(s, dsize, maxw)
+        if len(dlines) <= max_lines:
+            WARN.append("[%s] 密集档 %dpx（原 %dpx）：折行超限、小一号塞得下｜%s"
+                        % (tag, dsize, size, strip_hl(s)[:34]))
+            size, lines = dsize, dlines
     if max_lines and len(lines) > max_lines:
         n_all = len(lines)
         lines = lines[:max_lines]
@@ -362,7 +398,7 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     out = []
     y0 = y - (len(lines) - 1) * line_h * 0.5
     for i, ln in enumerate(lines):
-        out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag,
+        out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag, cap=False,
                        anchor="start" if align == "start" else "middle"))
     return "".join(out)
 
@@ -436,16 +472,25 @@ def _reg_text(s):
 
 
 def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
-            maxw=None):
+            maxw=None, tag=""):
     """一行居中文本，可给任意片段涂蜡笔底色。
 
     ★ 必须「先画完所有色带、再统一画所有文字」——逐段交替输出时，
       后一段的色带会盖住前一段的文字。
     """
+    _reg_cap(tag, "".join(t for t, _ in parts), size, maxw, 1)
     total = sum(tw(t, size) for t, _ in parts) * 1.06   # 实际渲染宽估计
     if maxw and total > maxw:
-        size = max(20, int(size * maxw / total))
-        total = sum(tw(t, size) for t, _ in parts) * 1.06
+        dense = int(size * DENSE)
+        dtotal = sum(tw(t, dense) for t, _ in parts) * 1.06
+        if dtotal <= maxw:
+            WARN.append("[%s] 密集档 %dpx（原 %dpx）：标准放不下、小一号放得下｜%s"
+                        % (tag, dense, size, "".join(t for t, _ in parts)[:34]))
+            size = dense
+            total = dtotal
+        else:
+            size = max(20, int(size * maxw / total))
+            total = sum(tw(t, size) for t, _ in parts) * 1.06
     x = cx - total / 2.0 if align == "center" else cx
     bands, texts = [], []
     for i, (t, col) in enumerate(parts):
@@ -1413,6 +1458,7 @@ def render_card(card, idx, total, meta, font_url):
 
     _BOXES.clear()
     _TEXTS.clear()
+    _CAPS.clear()
     body = LAYOUTS[layout](card, idx * 17 + 7)
     sub = _sub(card.get("subtitle", ""))
     h1 = h1_html(card.get("title", ""))
@@ -1444,8 +1490,9 @@ def render_card(card, idx, total, meta, font_url):
     # ★ manifest 必须最后算：上面每个渲染函数都会 _reg_text 登记文字，
     # 早算一步就漏掉后发生的那批（踩过：算在 _sub 之前 → 副标题没进清单，
     # 于是内容门对副标题完全失明）。
-    manifest = "<!--T2I_BOXES:%s--><!--T2I_TEXTS:%s-->" % (
-        json.dumps(_BOXES), json.dumps(_TEXTS, ensure_ascii=False))
+    manifest = "<!--T2I_BOXES:%s--><!--T2I_TEXTS:%s--><!--T2I_CAPS:%s-->" % (
+        json.dumps(_BOXES), json.dumps(_TEXTS, ensure_ascii=False),
+        json.dumps(_CAPS, ensure_ascii=False))
     return ("""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><style>%s</style></head>
 <body><div class="card %s">

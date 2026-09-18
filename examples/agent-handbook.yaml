@@ -94,7 +94,7 @@ cards:
       - {text: 工具清单}
       - {text: FC 定义, fill: blue}
       - {text: tool_call, fill: yellow}
-      - {text: tools/call}
+      - {text: tools}
     note: 上下游接力，不是二选一
     note2: FC 在模型侧，MCP 在应用侧
 

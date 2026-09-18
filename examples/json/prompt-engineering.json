@@ -81,7 +81,7 @@
         "label": "改成正向",
         "blocks": [
           {
-            "text": "只输出 schema 中的字段",
+            "text": "只输出 schema 字段",
             "fill": "yellow"
           },
           "同一动作最多 3 次",
@@ -199,7 +199,7 @@
           "desc": "配置化 + 热加载"
         },
         {
-          "text": "版本号进 trace",
+          "text": "可追溯",
           "fill": "yellow"
         },
         {
