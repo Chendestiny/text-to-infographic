@@ -43,7 +43,7 @@
 
 | 门 | 成本 | 抓什么 | 漏什么 |
 |---|---|---|---|
-| 规格门 `validate.py` | 毫秒，纯字符串 | 文案超契约（**90% 的问题**） | 字体度量导致的真实宽度偏差 |
+| 规格门 `validate.py` | 毫秒级（含一次无浏览器渲染算几何） | 结构问题 + **几何放不下**（丢字 / 缩到不可读） | 真实字体度量偏差（由像素门兜） |
 | 像素门 `measure.py` | 秒级，要起浏览器 | 真实渲染出来的溢出（宽度/纵向）**＋ 内容门**（规格里登记的字是否真的出现在图上） | 审美（配色、间距观感） |
 
 **能机械校验的绝不交给模型判断。** 两道门都是纯脚本，不花 token；
@@ -92,7 +92,9 @@
 | `scripts/ink.py` | 渲染核心：手绘原语、13 种版式、页面装配、`CALIB` |
 | `scripts/decor.py` | 装饰零件（齿轮/星形，纯 SVG path）+ 颜色轮换 |
 | `scripts/build.py` | CLI：规格 → HTML（支持 yaml / json） |
-| `scripts/validate.py` | CLI：字数契约校验（规格门） |
+| `scripts/plan.py` | CLI：页数规划（建议张数 + 每页骨架，把「推导」变成「答案」） |
+| `scripts/capacity.py` | CLI：几何容量（每槽 ok / dense / overflow，规格门硬墙的依据） |
+| `scripts/validate.py` | CLI：规格门（结构 + 几何硬违规，字数只提示） |
 | `scripts/measure.py` | 真实浏览器文本测量（像素门）+ 方框清单比对 |
 | `scripts/render.py` | CLI：HTML → PNG（后端选择 + 跨平台浏览器探测） |
 | `scripts/cdp.py` | 纯标准库 CDP 客户端（默认渲染后端） |
