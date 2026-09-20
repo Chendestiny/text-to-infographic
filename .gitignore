@@ -19,6 +19,9 @@ t2i-prof-*
 .idea/
 .DS_Store
 
+# Agent 工作区记忆（本地数据，不进公开仓库）
+.workbuddy-ai/
+
 # 本地调试备份 / 中间产物
 *.bak
 *.bak2
