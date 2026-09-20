@@ -56,7 +56,7 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 | 入口收敛（`--plan`） | `58f8feb` | 无参数打印用法；交付模式未破坏 |
 | 文档全面更新（删过期机制） | `d3ffd3c`、`da9f816`、`598f09a`、`f2f9570` | 过期关键词复扫 0 处；相对链接全部有效 |
 | 删 `txt_block` / `hl_line` 的不可达 SVG 尾巴（含拆掉 `if True:` 包裹层） | `f0d7a2f` | `ink.py` 1717 → 1658 行；顶层定义 94 → 94 **一条不少**；5 份示例 pipeline exit=0 |
-| 文档补课：四道门口径、`run.py --plan` 入口、迁移状态 13/13 | 见本节末尾 | `architecture.md` / `SKILL.md` / `README.md` / `README.en.md` / `docs/README.md` 与 ROADMAP 对齐 |
+| 文档补课：四道门口径、`run.py --plan` 入口、迁移状态 13/13 | `8495296` | `architecture.md` / `SKILL.md` / `README.md` / `README.en.md` / `docs/README.md` 与 ROADMAP 对齐；过期口径复扫 0 处；107 个相对链接全部有效 |
 
 **速度**：三轮均值 **198.7s**（SVG 基线 377s，**-47%**），最快 139.6s；**180s 目标在 2/3 轮达成**。
 
