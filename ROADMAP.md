@@ -26,6 +26,8 @@
 python scripts/run.py --plan <文章.md>                          # 页数 + 区间 + 页骨架 + 可粘贴 meta.plan
 python scripts/run.py <spec.json> --budget --no-render          # 每槽尺寸/起手字号 + 预检 + 规格门
 python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：四道门 + 出图 + 缩略图 + 结论 + 交付报告
+python scripts/run.py <spec.json> --only N --out 目录            # 单页返工：1~2 秒，其余页不动
+python tests/run.py                                             # 自测：14 条，约 75 秒
 ```
 
 `run.py` 自己调这些（**不要分头跑**，实测那样会让一轮多出 20+ 次命令调用）：
@@ -152,7 +154,14 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 | 1 | **削方差**：分析 287s 那轮的会话轨迹，找出多出的 ~16 次调用花在哪，并针对性改文档/脚本 | 三轮都 ≤200s，最好两轮 ≤180s |
 | 2 | **安全清死代码**（`txt_block` / `hl_line` 的尾巴已由 `f0d7a2f` 清掉；**剩下** `_reg_cap` / `_CAPS` 管路与 `capacity.py` 的 judge 路径） | `ink.py` 再减 ~40 行；5 份示例 pipeline exit=0；顶层定义一条不少 |
 | 3 | **契约瘦身**：把 `max:` 改成显式的"建议值"字段（或移到 docs），让 YAML 只留结构与条数约束 | 规格门行为不变；YAML 行数显著下降 |
-| 4 | **给门加自测**：把 5 份示例 + 12 处已知反例（孤字、压框、劈词、超长）做成 `tests/`，一条命令跑完。**必含本轮抓到的 4 条断言**：① 只有孤字时 `exit` 必须是 **0**（不是 1）② 真 `dom-overflow` 必须 `exit=1` 且报错里**带像素值** ③ 填了 `meta.plan.note` 就不得报"没写偏离理由" ④ `--budget` 对已知会溢出的规格**不得**报"都放得下 ✓" | `python tests/run.py` 全绿 |
+| 4 | ✅ **已做**（`4c26acb`）：`python tests/run.py` —— 14 条测试、约 75 秒。
+分组：示例回归 / 严重度分级 / 报错要说清楚 / 页数与预算 / 可靠性兜底。
+每条都对应一次真实踩坑，docstring 里写了它守的是什么。
+**它是防"轮次悄悄变多"的** —— 一轮返工 ≈ 一次 LLM 往返（50~90s），
+而脚本只要 6s，所以"退化成多跑几轮"是这个项目最贵的失效模式，
+在测试里抓住它比在真机上便宜得多 |
+| 4b | 补 `tests/` 里还没覆盖的：12 处已知反例（孤字、压框、劈词、超长）的**版式级**用例；
+另外把 `tests/run.py` 挂进 CI（现在**没有 workflow**，只能本地跑） | CI 上每条 PR 自动跑 |
 | 5 | ~~**Gitee 镜像同步**~~ **已基本达成**：实测镜像只落后 1 个提交（缺 `ROADMAP.md` 与 `docs/testing.md`，即 `cf037a3` 新增的两个文件）；`install.ps1` 与 `scripts/ink.py` 已与 GitHub 逐字节一致 | 推一次 `cf037a3` 后 `ROADMAP.md` 不再是 404 |
 | 6 | 复核 `docs/troubleshooting.md` 里"标题自动缩字号"那段（`h1_html` 仍会缩 ✓ 属正常） | 读一遍确认无过期描述 |
 
