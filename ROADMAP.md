@@ -28,8 +28,13 @@ python scripts/run.py <spec.json> --budget --no-render          # 每槽尺寸/�
 python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：四道门 + 出图 + 缩略图 + 结论 + 交付报告
 ```
 
-其余脚本都在 `run.py` 里被调用，**不要分头跑**（实测那样会让一轮多出 20+ 次命令调用）：
-`plan.py / preflight.py / validate.py / pipeline.py / capacity.py / review_sheet.py / measure.py / ink.py / build.py / doctor.py / vision_probe.py`
+`run.py` 自己调这些（**不要分头跑**，实测那样会让一轮多出 20+ 次命令调用）：
+`plan.py / preflight.py / validate.py / capacity.py / pipeline.py / review_sheet.py`
+
+`pipeline.py` 再把 `ink.py`（库）/ `measure.py` / `render.py` 当模块导入。
+**只有 `build.py` / `doctor.py` / `vision_probe.py` 是独立 CLI**，不走交付流程：
+`doctor.py` 是环境自检（SKILL.md 第 1 步要单独跑）、`build.py` 是"规格→HTML"的单步调试入口、
+`vision_probe.py` 判读图能力。
 
 **四道门**：
 1. 文字级预检（数量词 vs 实际条数；孤字/断词已移到浏览器侧）
@@ -50,15 +55,19 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 | 交付报告自动填写 | `4b02521` | 跑一份示例可见"页数/版式/门禁/降级/自检"已填 |
 | 入口收敛（`--plan`） | `58f8feb` | 无参数打印用法；交付模式未破坏 |
 | 文档全面更新（删过期机制） | `d3ffd3c`、`da9f816`、`598f09a`、`f2f9570` | 过期关键词复扫 0 处；相对链接全部有效 |
+| 删 `txt_block` / `hl_line` 的不可达 SVG 尾巴（含拆掉 `if True:` 包裹层） | `f0d7a2f` | `ink.py` 1717 → 1658 行；顶层定义 94 → 94 **一条不少**；5 份示例 pipeline exit=0 |
+| 文档补课：四道门口径、`run.py --plan` 入口、迁移状态 13/13 | 见本节末尾 | `architecture.md` / `SKILL.md` / `README.md` / `README.en.md` / `docs/README.md` 与 ROADMAP 对齐 |
 
 **速度**：三轮均值 **198.7s**（SVG 基线 377s，**-47%**），最快 139.6s；**180s 目标在 2/3 轮达成**。
 
 ## 四、已知技术债（别装看不见）
 
-1. **死代码**：`ink.py` 的 `txt_block` / `hl_line` 里各留约 **26 行不可达**的 SVG 实现；
-   `_reg_cap` / `_CAPS` 是空表但 `capacity.py` 还在引用。
-   功能零影响。**清理要点：用"显式文本区间"切，别用 `def` 边界**（上次用边界切，连带删掉了
-   `class Palette` 与 `HL_RE` 常量，推了坏版本 `e7d485f`，后由 `82e8dfc` 回滚）。
+1. **残留死代码**（`txt_block` / `hl_line` 的不可达尾巴已于 `f0d7a2f` 删除，剩下这些）：
+   `_reg_cap()` 现在**一个调用点都没有**（`f0d7a2f` 删掉了最后两处不可达调用），
+   `_CAPS` 因此恒为空表，但它的管路还在：`ink.py` 的 `_CAPS.clear()` 与
+   `<!--T2I_CAPS:...-->` 清单、以及 `capacity.py` 里读 `ink._CAPS` 的 judge 路径。
+   功能零影响（空表进去、空表出来）。**清理要点：用"显式文本区间"切，别用 `def` 边界**
+   （上次用边界切，连带删掉了 `class Palette` 与 `HL_RE` 常量，推了坏版本 `e7d485f`，后由 `82e8dfc` 回滚）。
    每次切完必须：① 对比切前切后的**全部顶层定义**（def/class/常量）② 跑 5 份示例的 **pipeline exit code**。
 2. **`templates/contracts.yaml` 里 101 条 `max:`** 现在只是写作建议（`validate.py` 已把它们降为提示），可瘦身。
 3. **`preflight.py`** 里靠 Python 估算折行的检查已删（被浏览器侧 `dom-orphan` 取代），仅保留"数量词"检查。
@@ -70,10 +79,10 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 | # | 事项 | 验收标准 |
 |---|---|---|
 | 1 | **削方差**：分析 287s 那轮的会话轨迹，找出多出的 ~16 次调用花在哪，并针对性改文档/脚本 | 三轮都 ≤200s，最好两轮 ≤180s |
-| 2 | **安全清死代码**（含 `_CAPS`/`_reg_cap` 与 `capacity.py` 的 judge 路径） | `ink.py` 再减 ~50 行；5 份示例 pipeline exit=0；顶层定义一条不少 |
+| 2 | **安全清死代码**（`txt_block` / `hl_line` 的尾巴已由 `f0d7a2f` 清掉；**剩下** `_reg_cap` / `_CAPS` 管路与 `capacity.py` 的 judge 路径） | `ink.py` 再减 ~40 行；5 份示例 pipeline exit=0；顶层定义一条不少 |
 | 3 | **契约瘦身**：把 `max:` 改成显式的"建议值"字段（或移到 docs），让 YAML 只留结构与条数约束 | 规格门行为不变；YAML 行数显著下降 |
 | 4 | **给门加自测**：把 5 份示例 + 12 处已知反例（孤字、压框、劈词、超长）做成 `tests/`，一条命令跑完 | `python tests/run.py` 全绿 |
-| 5 | **Gitee 镜像同步**（**当前落后**，见桌面交接单） | `(irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1) -match '\$\{v\}:'` 为 True |
+| 5 | ~~**Gitee 镜像同步**~~ **已基本达成**：实测镜像只落后 1 个提交（缺 `ROADMAP.md` 与 `docs/testing.md`，即 `cf037a3` 新增的两个文件）；`install.ps1` 与 `scripts/ink.py` 已与 GitHub 逐字节一致 | 推一次 `cf037a3` 后 `ROADMAP.md` 不再是 404 |
 | 6 | 复核 `docs/troubleshooting.md` 里"标题自动缩字号"那段（`h1_html` 仍会缩 ✓ 属正常） | 读一遍确认无过期描述 |
 
 ## 六、文档索引
