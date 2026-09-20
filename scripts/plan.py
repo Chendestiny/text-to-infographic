@@ -162,7 +162,12 @@ def main():
             print("  建议的页骨架（照它写，不用自己再算）：")
             for i, g in enumerate(p["groups"], 2):
                 print("    card-%02d  %s" % (i, " + ".join(t for t, _ in g)[:52]))
-            note = ((spec.get("meta") or {}).get("plan_note") or "").strip()
+            # ★ 两个键都要认：自己打印的模板（见本文件末尾）和 SKILL.md 都写
+            #   meta.plan.note，而 validate.py 也优先读它；早先这里只读 meta.plan_note，
+            #   于是「照模板填了 note」反而被判成「没写偏离理由」。
+            _meta = spec.get("meta") or {}
+            note = (((_meta.get("plan") or {}).get("note")
+                     or _meta.get("plan_note")) or "").strip()
             cap = p["range"][1] + 1
             if n > cap:
                 print("  ✗ 页数 %d **超过硬上限 %d**（区间上沿 %d + 1）：默认动作是"
