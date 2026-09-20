@@ -1,0 +1,57 @@
+name: ci
+
+# 为什么要有 CI：这个项目最贵的失效模式不是"跑得慢"，而是**悄悄多一轮返工** ——
+# 一轮返工 ≈ 一次 LLM 往返（50~90s），而脚本只要 6s。tests/run.py 里每条断言
+# 都对应一次真实踩坑（门没跑却报绿、孤字被当硬错误、--budget 假绿……），
+# 不挂在 CI 上，下次改渲染链路还会悄悄退化。
+#
+# 本地跑同一套：python tests/run.py
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11"]
+    env:
+      # 让输出稳定可读；后端留 auto，CDP 挂了还能降级到 CLI
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml
+        # pyyaml 是**硬依赖**：规格门要用它解析契约本体 templates/contracts.yaml，
+        # 与规格是不是 .json 无关（README 里已写明）。
+
+      - name: Ensure a Chromium browser exists (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # ubuntu-latest 自带 google-chrome；没有就装个 chromium 顶上
+          if command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+            echo "browser already present"
+          else
+            sudo apt-get update
+            sudo apt-get install -y chromium-browser
+          fi
+          python -c "import sys; sys.path.insert(0,'scripts'); import render; print('browser =', render.find_browser())"
+
+      - name: Compile check
+        run: python -m compileall -q scripts tests
+
+      - name: Gate + reliability self-test
+        run: python tests/run.py -v
