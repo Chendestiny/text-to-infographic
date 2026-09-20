@@ -1529,9 +1529,10 @@ h1{font-size:%H1%px;line-height:1.14;text-align:center;color:%C_HEAD%;font-weigh
 .hl.gr::before{background-color:%PAL_GR%}
 .hl.o::before{background-color:%PAL_O%}
 .bullets{margin-top:12px;flex:1 1 auto;min-height:0;
-     display:flex;flex-direction:column;justify-content:space-between;}
+     display:flex;flex-direction:column;justify-content:space-between;
+     gap:22px;}
 .row{border:5.6px solid %INK%;border-radius:16px 20px 17px 21px;
-     padding:28px 40px;min-height:0;flex:1 1 0;
+     padding:16px 40px;min-height:0;flex:1 1 0;
      display:flex;flex-direction:column;justify-content:center;}
 .row .head{font-size:%ROW_HEAD%px;line-height:1.35;color:%C_HEAD%;font-weight:700;
      letter-spacing:-1.5px;}
