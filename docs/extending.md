@@ -2,6 +2,8 @@
 
 以加一个 `pyramid`（金字塔）版式为例。**五步，缺一步就会被后续维护卡住。**
 
+> **文字排版已改为 DOM**：折行 / 行数上限 / 垂直居中 / 字号自适应都由浏览器负责，引擎只给槽的矩形。本文中若出现 `wrap_text` / `fit` / `密集档` / `textLength` 等提法，属于**迁移前的历史机制**，现已删除或不再参与判定；详见 [architecture.md 的《文字排版：为什么是 DOM》](architecture.md)。
+
 ## 1. 写 layout 函数（`scripts/ink.py`）
 
 在 `LAYOUTS = {` **之前**插入函数（顺序要紧：字典引用函数名，函数必须先定义）。
@@ -85,7 +87,8 @@ python -c "import sys; sys.path.insert(0,'scripts'); import ink; print(len(ink.L
 ```
 
 判断软硬的实测方法：故意造一张超限页——
-**真溢出**（被裁 / 压框）就是硬约束；**只是变密**（自动换行/缩字）就加 `soft: true`。
+DOM 文字下，折行/行数/缩放由浏览器负责，所以槽的字数上限都是**建议值**（`soft: true` 的语义）；
+真正会报硬问题的只有"缩到下限仍放不下"（`dom-overflow`）。
 
 ## 4. 加进方案图鉴（`make_layout_gallery.py`）
 

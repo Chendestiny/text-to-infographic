@@ -59,12 +59,12 @@ python scripts/plan.py <文章.md> --check <spec.json>
 **第 3 步 · 写规格**：从 [examples/](examples/) 抄一个形状再改文案。
 **先把骨架写成规格（版式与条数定了、文案留空）跑一次**：
 `python scripts/run.py <骨架.json> --budget --no-render` —— 一眼看到每槽能放几个汉字 + 预检结论。
-实测这一步能把 4 轮返工压到 1 轮；**文字放不下由引擎自己缩字号兜住，不用为它反复改文案**。
+实测这一步能把 4 轮返工压到 1 轮；**文字放不下由浏览器自动缩字号兜住（autofit），不用为它反复改文案**。
 
 
 - 版式字段表在 [docs/layouts.md](docs/layouts.md)，开头还有一张**字段支持总表**
   （`note` 在 bullets / compare / cycle / raw 上写了也不渲染，规格门会拦）
-- **字数上限只是建议值 M**：真实能不能放下由几何说话。拿不准就跑 `capacity.py`
+- **字数上限只是写作建议**：真实能不能放下由**浏览器实测**说话（`run.py` 的 DOM 槽检查）。拿不准就跑 `--budget`
 - 放不下时**先换版式或换写法**（一页 `bullets` 4~6 条、`chain` 5~6 步、`compare` 4+4 条），别硬塞
 - 语法见本文「三、规格语法」
 
@@ -76,9 +76,10 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 它一次做完：文字预检 → 页数对账 → 规格门 → 像素门/几何门 → 出图 → 复核缩略图 → 一句结论。
 
 - **只看结论里的「必须改」**：逐条改掉再跑同一条命令，通常 1~2 次就干净
-- 「引擎自己兜住的妥协」（缩字 / 密集档）**不是你的活**：引擎保证不出框、不丢字，
-  字小一点会点名报告，**不要为它反复改文案**（实测那样会多烧 3~4 轮、几分钟）
-- 唯一真的会把 LLM 拉回来的是「多行放不下会截断」（丢字）和「页数超硬上限」（合并相邻页）
+- 「引擎自己兜住的妥协」**不是你的活**：文字折行、行数上限（`-webkit-line-clamp`）、垂直居中、
+  字号自适应都交给浏览器；字小一点不是问题，**不要为它反复改文案**（实测那样会多烧 3~4 轮、几分钟）
+- 真正会把 LLM 拉回来只有两类：**`dom-overflow`**（浏览器缩到下限仍放不下 → 改短文案）
+  和**页数超硬上限**（合并相邻页）。`dom-orphan`（末行只剩 1~2 字）是提示，能改就改
 
 `run.py` 的输出一眼能看：`① 预检 ② 页数 ③ 规格门 ④ 像素门 ⑤ 复核图`，最后一段是结论。
 其中 `④ 像素门` 里 `measure: N 处溢出 / verify:` 是真实浏览器实测的结果。
@@ -151,8 +152,8 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 | 症状 | 读哪 |
 |---|---|
 | 页数 / 密度拿不准 | 本文第 2 步 + `plan.py` 的输出 |
-| 报「几何上放不下」「密集档」 | [docs/contracts.md](docs/contracts.md) |
-| 报未知字段 / note 不渲染 / 文案被截断 | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| 报 `dom-overflow` / `dom-orphan` | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| 报未知字段 / note 不渲染 | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | 不知道某版式有哪些字段 | [docs/layouts.md](docs/layouts.md)（含字段支持总表） |
 | 截图 0 字节 / 后端问题 / profile 冲突 | [docs/rendering.md](docs/rendering.md) |
 | 想看"为什么这么设计" | [docs/architecture.md](docs/architecture.md) |
@@ -164,7 +165,7 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 ## 六、交付检查清单
 
 - [ ] `validate.py` **0 硬违规**（几何墙）
-- [ ] `pipeline.py` 没有 `needs_llm` 清单，且**降级报告已看过**（缩字 / 密集档 / 截断）
+- [ ] `pipeline.py` 没有 `needs_llm` 清单（若有，只可能是 `dom-overflow` 或结构问题）
 - [ ] 页数落在 `plan.py` 给的区间内（4~9）
 - [ ] **跑过 `preflight.py`**（孤字 / 断词 / 数量词）且已改完；像素门 0 溢出、无遗漏的降级报告
 - [ ] 交付时给了门禁逐字输出 + 页数理由 + 降级报告 + 自检结论

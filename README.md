@@ -65,7 +65,7 @@
 | 容量**跑 `capacity.py` 看几何**：ok / dense / overflow，不靠背字数上限 | `scripts/capacity.py` |
 | 两道门都要过；出现 `needs_llm` 就改文案重跑，不许跳门 | SKILL.md 第 4~5 步 |
 | **复核看拼版图**（720px 缩略图 + 2×2 拼版，一次 4 张），只问断词/孤字/压字/数量词 | `scripts/review_sheet.py` |
-| 每次跑完把**降级报告**摊开（缩字 / 密集档 / 截断，逐卡点名），不藏妥协 | `scripts/pipeline.py` |
+| 每次跑完把**逐页体检表 + 问题明细**摊开（`dom-overflow` / `dom-orphan` / 压框 / 重叠，逐卡点名），不藏问题 | `scripts/pipeline.py` |
 | 用 **rect 求交**查压字/压线/穿框（不用视觉模型），视觉只留最后一道审美抽查 | `scripts/measure.py` |
 | 交付时给门禁**逐字输出** + 页数理由 + 降级报告 + 自检结论 | SKILL.md 第 6 步 |
 
@@ -111,9 +111,9 @@ python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → �
 python scripts/plan.py <文章.md>      # 汉字数 / 节数 → 建议张数 + 区间 + 每页骨架
 ```
 
-**容量同理**：契约里的字数只是**建议值 M**，真实放不放得下由几何说话 ——
-`python scripts/capacity.py <spec.json>` 逐槽给出 ok / dense / overflow。
-出图时 `pipeline.py` 还会打一份**降级报告**，逐卡点名"哪个槽被缩字 / 走了密集档 / 被截断"。
+**容量同理**：契约里的字数只是**写作建议**，真实放不放得下由**浏览器实测**说话 ——
+`python scripts/run.py <spec.json> --budget` 逐槽给出槽尺寸与起手字号。
+出图时 `pipeline.py` 还会逐卡打一份**逐页体检表**，并点名 `dom-overflow` / `dom-orphan` / 压框线 / 重叠。
 
 ---
 
