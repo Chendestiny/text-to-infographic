@@ -254,15 +254,24 @@ def main():
     if not args.spec:
         ap.error("要么给规格文件，要么用 --count 算字数")
 
-    try:
-        import yaml
-    except ImportError:
-        raise SystemExit("读 YAML 需要 pyyaml")
     raw = io.open(args.spec, encoding="utf-8").read()
     if args.spec.lower().endswith(".json"):
         spec = json.loads(raw)
     else:
+        try:
+            import yaml
+        except ImportError:
+            raise SystemExit("读 .yaml 规格需要 pyyaml：pip install pyyaml")
         spec = yaml.safe_load(raw)
+    # ★ 契约本体 contracts.yaml 也是 YAML，所以**即使规格是 .json 也离不开 pyyaml**。
+    #   但导入要放在这里、并把话说准：原来是无条件 `import yaml` 摆在最前面，
+    #   于是 .json 规格也报「读 YAML 需要 pyyaml」—— 看着像格式问题，其实是缺依赖，
+    #   排查方向直接跑偏（实测踩过）。
+    try:
+        import yaml
+    except ImportError:
+        raise SystemExit("规格门需要 pyyaml 才能解析 templates/contracts.yaml（契约本体）："
+                         "pip install pyyaml（或改用 --count）")
     contracts = yaml.safe_load(io.open(args.contracts, encoding="utf-8").read())
     errors, warns = validate(spec, contracts.get("layouts") or {})
     # 三类问题混在一个标题下会误导 Agent，分开打
@@ -291,12 +300,19 @@ def main():
         print("\n契约违规（硬约束，必须改）%d 处：" % len(errors))
         for path, msg, sample in errors:
             print("  %-42s %s  %s" % (path, msg, sample))
+        print("\n契约校验：%d 硬违规 / %d 软提示。" % (len(errors), len(warns)))
         return 1
+    # ★ 结论行必须**无条件**打印（三种情况都有"契约校验"字样）。
+    #   原来只有"0 硬 0 软"时才打"契约校验通过"，于是**只有软提示**时整份输出里
+    #   没有稳定标识 —— 上游 run.py 靠它判断"这道门到底跑没跑"，判不出来就会把
+    #   「跑了但只有软提示」误当成「压根没跑」，也会把「没跑」误当成「有提示」。
     if not warns:
         n = len(spec.get("cards") or [])
         zone = ("在推荐区间 %d~%d 内" % (SWEET_MIN, SWEET_MAX)
                 if SWEET_MIN <= n <= SWEET_MAX else "（%d 张）" % n)
         print("契约校验通过（%d 页，%s，0 硬 / 0 软）。" % (n, zone))
+    else:
+        print("\n契约校验：0 硬违规 / %d 软提示（不影响交付，能改更好）。" % len(warns))
     return 0
 
 

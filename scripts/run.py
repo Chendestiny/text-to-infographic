@@ -59,12 +59,18 @@ def main():
     out = a.out or os.path.dirname(spec)
     hard, soft = [], []
 
-    o, _ = run("preflight.py", spec)
+    o, rc_pre = run("preflight.py", spec)
     for l in o.splitlines():
         if l.strip().startswith("✗"):
             hard.append("预检｜" + l.strip())
+    # ★ 没打出结论行 = 脚本压根没跑完（缺依赖 / 抛异常），**不能当成"没问题"**。
+    #   这就是假绿：门没跑，却报 exit=0。实测踩过 —— 受管 Python 没装 pyyaml，
+    #   validate.py 直接 SystemExit，run.py 照样输出"✓ 硬问题 0 处"。
+    if "文字级预检" not in o:
+        hard.append("预检｜preflight.py 未跑完（exit=%d）：%s"
+                    % (rc_pre, (o.strip().splitlines() or [""])[-1][:110]))
     print("① 预检     " + ([l.strip() for l in o.splitlines() if "文字级预检" in l]
-                            or ["（未输出）"])[0])
+                            or ["✗ 未跑完（见结论）"])[0])
 
     if a.article:
         o, _ = run("plan.py", a.article, "--check", spec)
@@ -77,14 +83,23 @@ def main():
                 soft.append(l.strip())
 
     o, rc = run("validate.py", spec)
+    spec_out = o          # ★ 留一份：下面 o 会被 review_sheet 覆盖，
+                          #   而交付报告要引用规格门的结论（原来就引错了输出）
     for l in o.splitlines():
         s = l.strip()
         if s.endswith("：") or re.match(r"^(页数提示|契约违规|软约束|密集档提示|超过建议字数)", s):
             continue
         if re.search(r"几何上放不下|未知字段|不渲染|条数越界|超过硬上限", s):
             hard.append("规格门｜" + s[:120])
-    print("③ 规格门   " + ([l.strip() for l in o.splitlines() if "契约校验" in l]
-                            or ["有提示（见下）"])[0])
+    # ★ 同上：判定"跑没跑完"要看结论行。原来只找"契约校验"，而失败时打的是
+    #   "契约违规" —— 于是**违规**和**崩溃**都落到同一个"（有提示，见下）"，
+    #   崩溃就被吞成了软提示。
+    if "契约校验" not in o and "契约违规" not in o:
+        hard.append("规格门｜validate.py 未跑完（exit=%d）：%s"
+                    % (rc, (o.strip().splitlines() or [""])[-1][:110]))
+    print("③ 规格门   " + ([l.strip() for l in o.splitlines()
+                            if "契约校验" in l or "契约违规" in l]
+                            or ["✗ 未跑完（见结论）"])[0])
 
     if a.budget:
         ob, _ = run("capacity.py", spec, "--budget")
@@ -195,7 +210,8 @@ def main():
             print("交付报告（数字已填好，可直接粘贴）")
             print("  页数：%d 页（%s）" % (len(_cards), _pl))
             print("  版式：%s" % _lays)
-            print("  规格门：%s" % ([l.strip() for l in o.splitlines() if "契约校验" in l]
+            print("  规格门：%s" % ([l.strip() for l in spec_out.splitlines()
+                                    if "契约校验" in l or "契约违规" in l]
                                   or ["（有提示，见上）"])[0])
             for _l in _meas:
                 print("  像素门：%s" % _l)
