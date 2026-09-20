@@ -31,6 +31,11 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 `run.py` 自己调这些（**不要分头跑**，实测那样会让一轮多出 20+ 次命令调用）：
 `plan.py / preflight.py / validate.py / capacity.py / pipeline.py / review_sheet.py`
 
+> ⚠ **跑之前确认解释器装了 pyyaml**：规格门要拿它解析契约本体 `templates/contracts.yaml`，
+> 与规格是不是 `.json` 无关。本机 `python` 一度指向没装 pyyaml 的解释器，
+> 结果是**规格门静默跳过、run.py 还报 exit=0**（已由 `976eca7` 修成硬问题）。
+> 一句话自检：`python -c "import yaml"`。
+
 `pipeline.py` 再把 `ink.py`（库）/ `measure.py` / `render.py` 当模块导入。
 **只有 `build.py` / `doctor.py` / `vision_probe.py` 是独立 CLI**，不走交付流程：
 `doctor.py` 是环境自检（SKILL.md 第 1 步要单独跑）、`build.py` 是"规格→HTML"的单步调试入口、
@@ -57,32 +62,42 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
 | 文档全面更新（删过期机制） | `d3ffd3c`、`da9f816`、`598f09a`、`f2f9570` | 过期关键词复扫 0 处；相对链接全部有效 |
 | 删 `txt_block` / `hl_line` 的不可达 SVG 尾巴（含拆掉 `if True:` 包裹层） | `f0d7a2f` | `ink.py` 1717 → 1658 行；顶层定义 94 → 94 **一条不少**；5 份示例 pipeline exit=0 |
 | 文档补课：四道门口径、`run.py --plan` 入口、迁移状态 13/13 | `8495296` | `architecture.md` / `SKILL.md` / `README.md` / `README.en.md` / `docs/README.md` 与 ROADMAP 对齐；过期口径复扫 0 处；107 个相对链接全部有效 |
-| 本地实测（文章4，不走 hermes）揪出 3 个真 bug | `0e76d4d`、`3af40ed`、`277747d` | 见下方《文章4 本地实测》；三条都改完 5 份示例仍 exit=0 |
+| 本地实测（文章4 / 文章5，不走 hermes）揪出 5 个真 bug + 2 处样式问题 | `0e76d4d`、`3af40ed`、`277747d`、`976eca7`、`3c37db6`、`d664f63`、`5ac1880` | 见下方《文章4 / 文章5 本地实测》；10 份示例（5 json + 5 yaml）仍 exit=0 |
 
 **速度**：三轮均值 **198.7s**（SVG 基线 377s，**-47%**），最快 139.6s；**180s 目标在 2/3 轮达成**。
 
-### 文章4 本地实测揪出的 3 个 bug（都已修）
+### 文章4 / 文章5 本地实测揪出的 bug（都已修）
 
-不走 hermes、直接在本会话跑 `4 提示词工程.md`（3424 汉字 → 8 张）时踩到的。
-**都不是"agent 不够小心"，是脚本自己矛盾或给了假信号。**
+不走 hermes、直接在本会话跑 `4 提示词工程.md`（3424 汉字 → 8 张）与
+`5 向量化向量库与实践.md`（2934 汉字 → 7 张）时踩到的。
+**都不是"agent 不够小心"，是脚本自己矛盾、给了假信号，或者门根本没跑。**
 
 | # | 现象 | 根因 | 修法 |
 |---|---|---|---|
-| 1 | 按文档填了 `meta.plan.note`，门禁却说「没写偏离理由」 | `plan.py --check` 只读 `meta.plan_note`，而**它自己打印的模板**和**紧挨的报错文案**都写 `meta.plan.note`（`validate.py` 两个都认）→ 照文档做必踩 | 优先读 `meta.plan.note`，回退旧键 |
-| 2 | **两条孤字提示让整轮 `exit=1`**，白跑 2 轮返工 | SKILL.md 明写 `dom-orphan` 是「提示，能改就改」、只有 `dom-overflow` 和页数超限才拉回 LLM；但 `pipeline.py` 把它和 `dom-overflow` 同桶 → 进 `needs_llm` → 被 `run.py` 判成硬问题 | 新增 `SOFT_KINDS`，孤字单独一桶，既不挡渲染也不进 `needs_llm`；`N 处溢出` 只数硬问题 |
-| 3 | `--budget` 对**已知会溢出**的规格报「所有槽都放得下 ✓」 | 文字槽全迁 DOM 后 `_reg_cap` 没了调用点 → `ink._CAPS` 恒空 → `capacity.py` 的判定循环一次都没跑过（「槽位合计 0」） | 判空时明说"没判定"，并给 DOM 槽补「约 N 字（缩到下限 M 字）」参考线 |
+| 1 | 按文档填了 `meta.plan.note`，门禁却说「没写偏离理由」 | `plan.py --check` 只读 `meta.plan_note`，而**它自己打印的模板**和**紧挨的报错文案**都写 `meta.plan.note`（`validate.py` 两个都认）→ 照文档做必踩 | 优先读 `meta.plan.note`，回退旧键（`0e76d4d`） |
+| 2 | **两条孤字提示让整轮 `exit=1`**，白跑 2 轮返工 | SKILL.md 明写 `dom-orphan` 是「提示，能改就改」、只有 `dom-overflow` 和页数超限才拉回 LLM；但 `pipeline.py` 把它和 `dom-overflow` 同桶 → 进 `needs_llm` → 被 `run.py` 判成硬问题 | 新增 `SOFT_KINDS`，孤字单独一桶；`N 处溢出` 只数硬问题（`3af40ed`） |
+| 3 | `--budget` 对**已知会溢出**的规格报「所有槽都放得下 ✓」 | 文字槽全迁 DOM 后 `_reg_cap` 没了调用点 → `ink._CAPS` 恒空 → `capacity.py` 的判定循环一次都没跑过 | 判空时明说"没判定"；DOM 槽补「约 N 字（缩到下限 M 字）」（`277747d`） |
+| 4 | **规格门（第③道门）从来没跑过，而 run.py 报 `exit=0`** | 本机 `python` 指向的解释器没装 pyyaml，而 `validate.py` **无条件** `import yaml`（在判断扩展名之前）→ 每次 `.json` 规格都 `SystemExit`。`run.py` 只看 `pipeline.py` 的退出码，前两道门的退出码直接丢掉，只靠关键词找结论行 → 崩溃时没有结论行，就落进「有提示，见下」 | run.py 把"门没有结论行"判为硬问题；`validate.py` 改成惰性导入 + **无条件打印结论行**（`976eca7`） |
+| 5 | 安装脚本与 README 都说「`.json` 规格零第三方依赖」 | 契约本体 `templates/contracts.yaml` 就是 YAML，规格门**离不开 pyyaml**，与规格扩展名无关。这句错承诺正是 #4 被忽视的原因 —— 它读起来像"缺 pyyaml 是受支持的配置" | 五处（requirements / install.sh / install.ps1 / README 中英）改成硬依赖并写明理由（`3c37db6`） |
 
-顺带修的两处报告缺陷（同属 #2 那次实测暴露的）：
+顺带修的三处报告缺陷：
 
-- `needs_llm` 只带了 `(页, 文案)`，把 issue 里的 `note`（实测像素值）丢了 ——
-  报错只说"这条不行"、不说"差多少"，agent 只能试错猜要砍几个字。现在带上了：
+- `needs_llm` 只带 `(页, 文案)`，把 issue 的 `note`（**实测像素值**）丢了 ——
+  报错只说"这条不行"、不说"差多少"。现在带上：
   `← DOM 槽放不下：内容 157px 高 / 容器 73px（字号 31，已缩到下限）`
 - `run.py` 只把「需要 LLM 重写」**标题行**记进结论，逐条明细全丢 → 结论等于没说，
-  还得回头手跑一次 `pipeline.py` 才看得到（实测这本身又是一整轮）
+  还得回头手跑一次 `pipeline.py`（这本身又是一整轮）
+- 交付报告去 `review_sheet` 的输出里找规格门结论（`o` 被重新赋值了），
+  所以那行永远是「（有提示，见上）」
 
-> **教训**：这三条都属于「文档承诺 A、代码做 B」。单靠读文档发现不了 ——
-> 必须真跑一篇、并且**怀疑每一个"✓"**。`--budget` 那次尤其典型：
-> 假绿比没跑更危险，因为它会让你以为已经检查过了。
+**样式（用户提的）**：`bullets` 行与行原来贴在一起（`flex:1 1 0` + 无 `gap`）→
+加 `gap:22px` 并从行的竖向 padding 里扣回同样的空间（28→16px），**总高不变、不会溢出底部**；
+云朵从「sin(3θ) 三瓣圆球」重画成「三个错落椭圆瓣 + 平底」——
+关键是**瓣的圆心高度必须不同**（等高的圆瓣并集一定是土坡，几何上推导过）。
+
+> **教训**：这几条都属于「文档承诺 A、代码做 B」或「门没跑却报绿」。
+> 单靠读文档发现不了 —— 必须真跑，并且**怀疑每一个"✓"**。
+> 最危险的不是没检查，是**以为已经检查过了**。
 
 ## 四、已知技术债（别装看不见）
 
@@ -96,10 +111,13 @@ python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：
    属于该清的债。**清理要点：用"显式文本区间"切，别用 `def` 边界**
    （上次用边界切，连带删掉了 `class Palette` 与 `HL_RE` 常量，推了坏版本 `e7d485f`，后由 `82e8dfc` 回滚）。
    每次切完必须：① 对比切前切后的**全部顶层定义**（def/class/常量）② 跑 5 份示例的 **pipeline exit code**。
-2. **`templates/contracts.yaml` 里 101 条 `max:`** 现在只是写作建议（`validate.py` 已把它们降为提示），可瘦身。
-3. **`preflight.py`** 里靠 Python 估算折行的检查已删（被浏览器侧 `dom-orphan` 取代），仅保留"数量词"检查。
+2. **`templates/contracts.yaml` 里 101 条 `max:`** 现在只是写作建议（`validate.py` 已把它们降为提示），可瘦身。3. **`preflight.py`** 里靠 Python 估算折行的检查已删（被浏览器侧 `dom-orphan` 取代），仅保留"数量词"检查。
 4. **方差**：三轮 139.6~287s，差 2.06 倍。最大值那轮用了 **45 次 API 调用**（其余 29/26）——
    值得用 `hermes_timeline.py` 拆那一轮的会话，看它多绕在哪一段。
+5. **契约本体是 YAML → 规格门硬依赖 pyyaml**（`3c37db6` 已把五处文档说准）。
+   若想让「`.json` 规格零依赖」这个卖点真正成立，得让 `validate.py` 不再需要 pyyaml ——
+   给 `contracts.yaml` 配一份 JSON，或只解析它真正用到的字段。目前 `.json` 规格
+   **省不掉** pyyaml，README 已如实说明。
 
 ## 五、TODO（按性价比排序）
 
