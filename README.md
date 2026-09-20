@@ -62,7 +62,7 @@
 | 装完 clone + 探环境 + 跑 `doctor`，缺依赖自己补 | 安装脚本 |
 | 按五步走：读文章 → 写规格 → **过规格门** → 跑流水线 → 交图 | SKILL.md 第 1~5 步 |
 | 页数**跑 `plan.py` 拿答案**（含页骨架），不自己推公式 | SKILL.md 第 2 步 + `scripts/plan.py` |
-| 容量**跑 `capacity.py` 看几何**：ok / dense / overflow，不靠背字数上限 | `scripts/capacity.py` |
+| 容量**跑 `run.py --budget` 看槽尺寸**（折行/缩放交给浏览器），不靠背字数上限 | `scripts/run.py --budget` |
 | 两道门都要过；出现 `needs_llm` 就改文案重跑，不许跳门 | SKILL.md 第 4~5 步 |
 | **复核看拼版图**（720px 缩略图 + 2×2 拼版，一次 4 张），只问断词/孤字/压字/数量词 | `scripts/review_sheet.py` |
 | 每次跑完把**逐页体检表 + 问题明细**摊开（`dom-overflow` / `dom-orphan` / 压框 / 重叠，逐卡点名），不藏问题 | `scripts/pipeline.py` |

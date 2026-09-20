@@ -93,7 +93,7 @@
 | `scripts/decor.py` | 装饰零件（齿轮/星形，纯 SVG path）+ 颜色轮换 |
 | `scripts/build.py` | CLI：规格 → HTML（支持 yaml / json） |
 | `scripts/plan.py` | CLI：页数规划（建议张数 + 每页骨架，把「推导」变成「答案」） |
-| `scripts/capacity.py` | CLI：几何容量（每槽 ok / dense / overflow，规格门硬墙的依据） |
+| `scripts/capacity.py` | CLI：DOM 槽尺寸与起手字号（迁移前是手写容量的依据，现由浏览器实测取代） |
 | `scripts/validate.py` | CLI：规格门（结构 + 几何硬违规，字数只提示） |
 | `scripts/measure.py` | 真实浏览器文本测量（像素门）+ 方框清单比对 |
 | `scripts/render.py` | CLI：HTML → PNG（后端选择 + 跨平台浏览器探测） |
