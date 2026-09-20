@@ -26,14 +26,89 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
+# ★ 每个阶段的超时预算（秒）。实测正常耗时：各门 <1s，pipeline 约 1s/页
+#   （7 页 ≈ 7s）。这里留 30~80 倍余量 —— 目的是**卡住时能在可接受时间内报错退出**，
+#   不是掐正常执行；调大不会变慢，只会让卡死更难被发现。
+#   为什么必须有：run() 原来是裸的 subprocess.run，**没有任何 timeout**，
+#   任何一道门挂住（浏览器不响应、CDP 卡在 recv）就是无限等待 ——
+#   这正是用户实测"10 次至少 4 次卡壳"的结构性根源。
+STAGE_TIMEOUT = {
+    "plan.py": 90,
+    "preflight.py": 60,
+    "validate.py": 60,
+    "capacity.py": 60,
+    "pipeline.py": 600,
+    "review_sheet.py": 120,
+}
+DEFAULT_TIMEOUT = 120
 
-def run(script, *args):
+
+def _stage_timeout(script):
+    """取某阶段的超时预算。`T2I_TIMEOUT_SCALE` 可整体缩放（慢机器上放宽、
+    测试时收紧 —— 否则超时这条路径根本没法验证）。"""
+    base = STAGE_TIMEOUT.get(script, DEFAULT_TIMEOUT)
+    try:
+        return max(1, int(base * float(os.environ.get("T2I_TIMEOUT_SCALE") or 1)))
+    except ValueError:
+        return base
+
+
+def run(script, *args, **kw):
     env = dict(os.environ)
     env.setdefault("T2I_BACKEND", os.environ.get("T2I_BACKEND", "cdp"))
-    p = subprocess.run([sys.executable, os.path.join(HERE, script)] + [str(a) for a in args],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       cwd=ROOT, env=env)
+    t = kw.get("timeout") or _stage_timeout(script)
+    cmd = [sys.executable, os.path.join(HERE, script)] + [str(a) for a in args]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", cwd=ROOT, env=env, timeout=t)
+    except subprocess.TimeoutExpired:
+        return ("✗ %s 超时（%ds，已强制中止，不再无限等待）" % (script, t), 124)
     return (p.stdout or "") + (p.stderr or ""), p.returncode
+
+
+def rework(spec, only, out):
+    """单页返工：只重建 / 重测 / 重出第 only 页，其它页的 HTML 与 PNG 原样不动。
+
+    为什么需要（用户提的人在回路）：整套 8 张里只有 1 张不满意时，
+    重跑全量既慢又可能把好的那 7 张也重出成别的样子；用户要的是
+    "我说第 5 张不行，你就只改第 5 张"。实测一页 ≈ 1~2 秒。
+    """
+    print("单页返工：card-%02d（其它页不动）" % only)
+    print("-" * 64)
+    hard = []
+    # 规格门照跑：它便宜（~0.2s），而且改文案最容易踩的就是它
+    o, rc = run("validate.py", spec)
+    line = ([l.strip() for l in o.splitlines()
+             if "契约校验" in l or "契约违规" in l] or ["✗ 未跑完"])[0]
+    print("  规格门   " + line)
+    if "契约校验" not in o and "契约违规" not in o:
+        hard.append("规格门｜validate.py 未跑完（exit=%d）：%s"
+                    % (rc, (o.strip().splitlines() or [""])[-1][:110]))
+
+    o, rc = run("pipeline.py", spec, "-o", out, "--only", only)
+    for l in o.splitlines():
+        s = l.strip()
+        if s.startswith(("build:", "measure:", "verify:", "render:", "耗时", "✗")):
+            print("  " + s)
+        if s.startswith("✗"):
+            hard.append("像素门｜" + s[:120])
+    if rc != 0 and "measure:" not in o:
+        hard.append("像素门｜pipeline 异常退出（exit=%d）" % rc)
+
+    if not hard:
+        o2, _ = run("review_sheet.py", out)      # 让拼版缩略图跟上新图
+        for l in o2.splitlines():
+            if "真要看观感时" in l:
+                print("  复核图   " + l.strip()[:90])
+    print("=" * 64)
+    if hard:
+        print("✗ card-%02d 返工未完成：" % only)
+        for h in hard[:8]:
+            print("   " + h)
+        return 1
+    print("✓ card-%02d 已重新出图，其余页未改动。" % only)
+    print("  产物：%s" % os.path.join(out, "card-%02d.png" % only))
+    return 0
 
 
 def main():
@@ -46,6 +121,8 @@ def main():
     ap.add_argument("--budget", action="store_true",
                     help="顺带打印每槽字数预算表（写文案前用，省一次 capacity.py 调用）")
     ap.add_argument("--no-render", action="store_true", help="只过门不出图（写规格阶段用）")
+    ap.add_argument("--only", type=int, metavar="N",
+                    help="只重做第 N 页（1 起）：改完某页文案后用它，秒级出图、不动其它页")
     a = ap.parse_args()
 
     if a.plan:                      # 规划模式：一条命令入口收敛到 run.py
@@ -57,7 +134,10 @@ def main():
         return 2
     spec = os.path.abspath(a.spec)
     out = a.out or os.path.dirname(spec)
+    if a.only:
+        return rework(spec, a.only, out)
     hard, soft = [], []
+    pipe_out = ""               # ★ --no-render 时不会跑 pipeline，先给它一个空值
 
     o, rc_pre = run("preflight.py", spec)
     for l in o.splitlines():
@@ -111,13 +191,36 @@ def main():
         pipe_out = o = ""
     else:
         o, rc_pipe = run("pipeline.py", spec, "-o", out)
+        if rc_pipe != 0 and "measure:" not in o:
+            # ★ 崩溃/超时**重试一次**：渲染要碰浏览器和文件系统，偶发失败很常见
+            #   （Chrome 冷启动慢、profile 被占、杀软正在扫刚写出的 PNG）——
+            #   实测这类抖动是"卡壳"的主要来源，重试一次能救回大部分。
+            print("   ↻ 像素门第一次没跑完，自动重试一次…")
+            o2, rc2 = run("pipeline.py", spec, "-o", out)
+            if "measure:" in o2 or rc2 == 0:
+                o, rc_pipe = o2, rc2
         pipe_out = o                      # ★ 后面 o 会被 review_sheet 覆盖，先存一份
         # ★ pipeline 崩了必须算硬问题：原来只扫输出里的关键词，脚本抛异常时既没有
         #   measure: 也没有 needs_llm，于是"硬问题 0 处"是**假绿**（实测踩过：
         #   ink.py 被裁坏、palette 未定义，run.py 还报可以交付）
         if rc_pipe != 0 and "measure:" not in o:
-            hard.append("像素门｜pipeline 异常退出（exit=%d）：%s"
+            hard.append("像素门｜pipeline 异常退出（exit=%d，重试 1 次后仍失败）：%s"
                         % (rc_pipe, (o.strip().splitlines() or [""])[-1][:110]))
+
+        # ★ 产物核对：渲染失败原来只写进 pipeline 的日志、退出码仍是 0 —— 于是
+        #   "8 张里 1 张没出图"会被当成干净交付。这里**独立数一遍文件**，
+        #   不信任上游的自我报告（用户遇到的就是这个：图 05 没出来但报告说没问题）。
+        try:
+            import json as _json2
+            _n = len((_json2.load(io.open(spec, encoding="utf-8")).get("cards") or []))
+        except (ValueError, IOError):
+            _n = 0
+        _missing = [("card-%02d" % i) for i in range(1, _n + 1)
+                    if not os.path.exists(os.path.join(out, "card-%02d.png" % i))
+                    or os.path.getsize(os.path.join(out, "card-%02d.png" % i)) < 1024]
+        if _missing:
+            hard.append("产物｜以下页没有出图或文件为空（单独返工：run.py <spec> --only N）：%s"
+                        % " ".join(_missing))
     # ★ pipeline 的 needs_llm 明细是「缩进的一行一条」，必须整块收进来。
     #   原来只把标题行（"⚠ 以下文案需要 LLM 重写"）记进 hard，逐条明细全丢了 ——
     #   于是结论只剩一句"需要 LLM 重写"，agent 根本不知道改哪句、差多少，
@@ -160,12 +263,19 @@ def main():
     try:
         _spec = _json.load(io.open(spec, encoding="utf-8"))
         _bad = " ".join(hard)
-        print("  逐页：", end="")
-        for i, _c in enumerate(_spec.get("cards") or [], 1):
-            tag = "card-%02d" % i
-            mark = "✗" if tag in _bad else "✓"
-            print("%s%s " % (mark, tag.replace("card-", "")), end="")
-        print("（✓ = 该页四道门全过：无溢出/越界/压框/压线/重叠/孤字/断词/截断）")
+        # ★ 像素门根本没跑时，**不能**打勾。原来只要 hard 里没有 "card-05"
+        #   这个字面量就打 ✓ —— 于是超时/崩溃时整排 ✓，看着像"全部通过"，
+        #   实际是一页都没量过（和前面那几个假绿同一类错误）。
+        if not a.no_render and "measure:" not in pipe_out:
+            print("  逐页：**像素门没跑成，一页都没量过** —— 下面的 ✓ 不成立：")
+            print("        （原因见结论；修好后重跑本命令即可）")
+        else:
+            print("  逐页：", end="")
+            for i, _c in enumerate(_spec.get("cards") or [], 1):
+                tag = "card-%02d" % i
+                mark = "✗" if tag in _bad else "✓"
+                print("%s%s " % (mark, tag.replace("card-", "")), end="")
+            print("（✓ = 该页四道门全过：无溢出/越界/压框/压线/重叠/孤字/断词/截断）")
     except (ValueError, IOError):
         pass
 

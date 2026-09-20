@@ -50,6 +50,14 @@ SOFT_KINDS = ("dom-orphan",)
 
 
 # ---------------------------------------------------------------- 节点
+def _targets(state):
+    """这一轮要处理的卡号（1 起）。`only` 有值时只做那一张 —— 单页返工用。"""
+    only = state.get("only")
+    if only:
+        return [only]
+    return list(range(1, len(state["cards"]) + 1))
+
+
 def node_build(state):
     """规格 → HTML（calib 会随迭代更新，tw() 越跑越准）。"""
     meta = dict(state["meta"])
@@ -58,19 +66,23 @@ def node_build(state):
     outdir = state["build_dir"]
     if not os.path.isdir(outdir):
         os.makedirs(outdir)
-    else:
+    elif not state.get("only"):
         # 清掉上一次的卡片：规格从 9 页缩到 8 页时，残留的 card-09.html
         # 会被 render 当成第 9 张一起渲染出去（实测踩过）
         for f in os.listdir(outdir):
             if f.startswith("card-") and f.endswith(".html"):
                 os.remove(os.path.join(outdir, f))
+    # ★ --only 时**不清空**：其它页的 HTML 必须留着 —— 否则返工一页会顺手删掉
+    #   整本的中间产物，再想返工第二页就得把全部重建一遍。
     # ★ ink.WARN 逐卡归因：这个列表是模块级的，只有 build.py 会打印它，
     # 走 pipeline 正常流程时**从来没输出过** —— 于是"缩字 / 截断 / 密集档"全是静默的
     # （实测被外部测试抓到：hub 的 en 被从 33px 压到 21px，流程里一声不响）。
     # 这里按卡切片，攒成本轮的降级报告。
     ink.WARN[:] = []
     degraded = {}
-    for i, card in enumerate(state["cards"]):
+    for n in _targets(state):
+        i = n - 1
+        card = state["cards"][i]
         n0 = len(ink.WARN)
         html = ink.render_card(card, i, len(state["cards"]), meta, state["font_url"])
         with io.open(os.path.join(outdir, "card-%02d.html" % (i + 1)), "w",
@@ -80,7 +92,9 @@ def node_build(state):
         if new:
             degraded["card-%02d(%s)" % (i + 1, card.get("layout"))] = list(new)
     state["degraded"] = degraded
-    line = "build: %d 页（calib=%.2f）" % (len(state["cards"]), state["calib"])
+    line = "build: %d 页（calib=%.2f）" % (len(_targets(state)), state["calib"])
+    if state.get("only"):
+        line = "build: 只重建 card-%02d（calib=%.2f）" % (state["only"], state["calib"])
     if degraded:
         n = sum(len(v) for v in degraded.values())
         line += "  ⚠降级 %d 处（%d 页）" % (n, len(degraded))
@@ -90,11 +104,11 @@ def node_build(state):
 def node_measure(state):
     """逐页真实测量，收集溢出。"""
     issues = {}
-    for i in range(len(state["cards"])):
-        hp = os.path.join(state["build_dir"], "card-%02d.html" % (i + 1))
+    for n in _targets(state):
+        hp = os.path.join(state["build_dir"], "card-%02d.html" % n)
         rep, iss = measure_and_analyze(hp, state["browser"])
         if iss:
-            issues["card-%02d" % (i + 1)] = iss
+            issues["card-%02d" % n] = iss
     state["issues"] = issues
     hard = sum(1 for v in issues.values() for i in v if i["kind"] not in SOFT_KINDS)
     soft = sum(1 for v in issues.values() for i in v if i["kind"] in SOFT_KINDS)
@@ -170,20 +184,55 @@ def node_render(state):
     browser = state["browser"]
     if not os.path.isdir(state["out_dir"]):
         os.makedirs(state["out_dir"])
-    else:
-        # 同样清掉旧图：页数变少时残留的 card-07..09.png 会冒充新产物
+    # ★ **不要预先删图**。原来先清空 card-*.png 再逐张渲染 —— 渲染中途失败会把
+    #   上一次**本来是好的**成品一起删掉（实测：card-03 写不进去 → 01/02 也没了，
+    #   于是"1 张失败"升级成"整套没了"，正好是用户最不想要的）。
+    #   现在改成渲染成功后再清理"页数变少留下的旧图"，中途失败则旧图原样保留。
+    # ★ --only 时不清空：返工一页不该动其它页。
+    failed = []
+    for n in _targets(state):
+        hp = os.path.join(state["build_dir"], "card-%02d.html" % n)
+        png = os.path.join(state["out_dir"], "card-%02d.png" % n)
+        if not os.path.exists(hp):
+            state["log"].append("render: card-%02d.html 不存在（先跑一次完整交付）" % n)
+            failed.append("card-%02d" % n)
+            continue
+        try:
+            ok, msg = shoot(browser, hp, png, 1080, 1440, 2)
+            if not ok:
+                # ★ 渲染是唯一要碰浏览器 + 文件系统的环节，最容易偶发失败
+                #   （Chrome 冷启动慢、profile 被占、杀软正在扫刚写出的 PNG）。
+                #   重试一次，别让一次抖动废掉一张图。
+                time.sleep(1.0)
+                ok, msg2 = shoot(browser, hp, png, 1080, 1440, 2)
+                msg = (msg2 + "（重试 1 次后成功）") if ok else (msg + "｜重试仍失败：" + msg2)
+        except Exception as e:                       # noqa: BLE001
+            # ★ shoot() 也可能直接抛（权限、路径是目录、浏览器没了）。
+            #   包住它：一张图出不来不该连带把整套都拖死。
+            ok, msg = False, "渲染异常：%s" % e
+        state["log"].append("render: %s %s"
+                            % (os.path.basename(png),
+                               # 浏览器原生报错动辄几百字符（含进程号/时间戳），
+                               # 全打会把结论挤没；留前 160 字符够定位。
+                               (msg[:160] + "…") if len(msg) > 160 else msg))
+        if not ok:
+            failed.append("card-%02d" % n)
+    # 渲染成功（或至少没整体崩）之后，再清掉超出当前页数的残留旧图
+    if not state.get("only") and os.path.isdir(state["out_dir"]):
         for f in os.listdir(state["out_dir"]):
-            if f.startswith("card-") and f.endswith(".png"):
+            if not (f.startswith("card-") and f.endswith(".png")):
+                continue
+            try:
+                idx = int(f[5:7])
+            except ValueError:
+                continue
+            if idx > len(state["cards"]):
                 os.remove(os.path.join(state["out_dir"], f))
-    for i in range(len(state["cards"])):
-        hp = os.path.join(state["build_dir"], "card-%02d.html" % (i + 1))
-        png = os.path.join(state["out_dir"], "card-%02d.png" % (i + 1))
-        ok, msg = shoot(browser, hp, png, 1080, 1440, 2)
-        state["log"].append("render: %s %s" % (os.path.basename(png), msg))
+    state["render_failed"] = failed
 
 
 # ---------------------------------------------------------------- 图
-def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
+def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True, only=None):
     t0 = time.perf_counter()
     state = {
         "spec": spec_path, "meta": {}, "calib": 1.0, "issues": {}, "degraded": {},
@@ -193,9 +242,13 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
         "build_dir": os.path.join(ROOT, "build", os.path.splitext(
             os.path.basename(spec_path))[0]),
         "out_dir": os.path.abspath(out_dir),
+        "only": only,
     }
     spec = _load(spec_path)
     state["cards"] = spec.get("cards") or []
+    if only and not (1 <= only <= len(state["cards"])):
+        raise SystemExit("--only %s 越界：这份规格只有 %d 页"
+                         % (only, len(state["cards"])))
     meta = dict(spec.get("meta") or {})
     if frame:
         meta["frame"] = [frame]
@@ -250,6 +303,11 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
             for p, i in state["soft_issues"]:
                 print("    %s  「%s」%s"
                       % (p, i.get("text", ""), ("  ← " + i["note"]) if i.get("note") else ""))
+        if state.get("render_failed"):
+            # ★ 渲染失败原来只写进 log、退出码仍是 0 —— 于是"8 张里 1 张没出图"
+            #   会被上游当成干净交付（实测踩过，用户看到的就是"有 1 张出问题了"）。
+            print("\n  ✗ 以下页**没有出图**（渲染失败，重试过 1 次）：%s"
+                  % " ".join(state["render_failed"]))
     state["seconds"] = time.perf_counter() - t0
     return state
 
@@ -271,7 +329,15 @@ if __name__ == "__main__":
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--frame", choices=["pen", "card", "none"])
     ap.add_argument("--no-decor", action="store_true")
+    ap.add_argument("--only", type=int, metavar="N",
+                    help="只重做第 N 页（1 起）：单页返工用，秒级出图、不动其它页")
     args = ap.parse_args()
-    st = run(args.spec, args.out, frame=args.frame, no_decor=args.no_decor)
+    st = run(args.spec, args.out, frame=args.frame, no_decor=args.no_decor,
+             only=args.only)
     print("\n耗时 %.1fs" % st["seconds"])
+    # ★ 渲染失败必须让退出码非零：原来无条件 exit(0)，于是没出图也算"成功"
+    if st.get("render_failed"):
+        print("✗ 渲染失败：%s（重试 1 次仍失败，可单独返工：--only N）"
+              % " ".join(st["render_failed"]))
+        sys.exit(1)
     sys.exit(0)
