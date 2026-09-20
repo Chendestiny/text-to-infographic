@@ -165,17 +165,43 @@ def star5f(x, y, size, seed=1, opacity=0.62):
 def cloud(x, y, size, seed=1, opacity=0.55):
     """云朵 · 蓝色蜡笔填充（用户指定）。
 
-    形状：一圈"鼓包"（半径按 sin(3θ) 起伏）—— 比画三段圆弧简单，且手绘抖动后
-    更像云；fill 走 _shape 的蜡笔填充（实色 + 白斜纹），不是死板纯色块。
+    形状 = **几个椭圆瓣按上包络取并集 + 平底**。像不像云，全看两件事：
+
+    1. **瓣的圆心高度要错落**。等高的一圈圆瓣并集是**土坡**，不是云 ——
+       这是返工三次才想明白的：平底 + 等高的圆瓣，包与包之间几乎不出凹口，
+       因为小瓣的顶永远低于它与大瓣的交点（推导过：要出凹口就得把宽度拉到
+       3 倍以上）。把中间那瓣**抬高**之后，高度差直接造出肩部凹口，
+       宽度还不用变。
+    2. **采样点要少**（22~26 个）。`_jk` 是逐点独立抖动的，点数一多就成高频
+       锯齿、弧感全没（实测 57 点 + amp 0.05 → 顶边像石头；星形只用 10 点）。
+
+    返工记录：旧版 `rad = size*(0.60 + 0.30*sin(3θ))` 绕一圈 → 一团三瓣圆球；
+    改"圆心落在基线上"→ 有了平底但太扁（长宽比 2.7，像土坡）；
+    最后改成椭圆瓣 + 抬高中间瓣（长宽比约 2.0）才成形。
     """
-    r = _rnd(seed)
-    n = 24
+    base = y + size * 0.46                       # 底边：云是平底，中心对齐 (x, y)
+    # (横向偏移, 圆心抬高, 半宽 a, 半高 b)，单位 size
+    lobes = [(-0.50, 0.30, 0.46, 0.46),
+             (0.05, 0.52, 0.42, 0.42),
+             (0.56, 0.28, 0.38, 0.38)]
+    cs = [(x + dx * size, base - up * size, a * size, b * size) for dx, up, a, b in lobes]
+    x0 = min(cx - a for cx, _cy, a, _b in cs)             # 形状实际左右边界
+    x1 = max(cx + a for cx, _cy, a, _b in cs)
     pts = []
-    for i in range(n):
-        a = 2 * math.pi * i / n
-        rad = size * (0.60 + 0.30 * math.sin(3 * a) + r.uniform(-0.04, 0.04))
-        pts.append((x + rad * 1.25 * math.cos(a), y + rad * 0.78 * math.sin(a)))
-    return _shape(pts, seed, size * 0.10, fill=CRAYON_BLUE, op=opacity)
+    n = 26
+    for i in range(n + 1):
+        px = x0 + (x1 - x0) * i / n
+        top = base
+        for cx, cy, a, b in cs:                           # 上包络：取所有瓣里最高的
+            d = abs(px - cx)
+            if d < a:
+                top = min(top, cy - b * math.sqrt(1.0 - (d / a) ** 2))
+        pts.append((px, top))
+    # ★ 底边补几个点：只留一条直线边的话，_jk 的抖动只作用在两端，
+    #   底边会是一条笔直的线，和手绘轮廓不搭。
+    for i in range(4, -1, -1):
+        pts.append((x0 + (x1 - x0) * i / 5.0, base))
+    return _shape(pts, seed, size * 0.022, fill=CRAYON_BLUE, op=opacity)
 
 
 DECOR = {
