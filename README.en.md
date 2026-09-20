@@ -83,7 +83,9 @@ python scripts/run.py examples/json/agent-roadmap.json --out out/demo           
 python scripts/run.py examples/json/agent-roadmap.json --budget --no-render     # slot budgets only
 ```
 
-- The only dependencies are Python 3.8+ and any Chromium browser (auto-detected); the font is bundled; `.json` specs need zero third-party packages
+- The only dependencies are Python 3.8+, `pyyaml` and any Chromium browser (auto-detected); the font
+  is bundled. `pyyaml` is needed by the **spec gate**, which parses the contract itself
+  (`templates/contracts.yaml`, YAML) — so writing `.json` specs does not remove it
 - Copy a spec shape from [examples/](examples/) — running `examples/agent-roadmap.json` gives you a finished deck
 
 ---
@@ -201,7 +203,7 @@ filled by default — write `fill: none` to leave one blank on purpose.
 | dependency | required? | notes |
 |---|---|---|
 | Python 3.8+ | yes | core scripts are stdlib-only |
-| pyyaml | optional | only for .yaml specs; **.json specs need zero third-party packages** |
+| pyyaml | **required** | the spec gate parses the contract (`templates/contracts.yaml`, YAML) with it; writing `.json` specs does not remove it (without it the gate is skipped silently) |
 | Chromium browser | to render | Chrome / Edge / Chromium, auto-detected (CDP or CLI backend) |
 | multimodal model | optional | correctness is pure text measurement; vision only adds an aesthetic last pass |
 

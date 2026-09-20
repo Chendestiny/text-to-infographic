@@ -88,15 +88,19 @@ else
     exit 1
 fi
 
-# ---- 3) yaml support (optional) ----
+# ---- 3) yaml support (the spec gate needs it) ----
+# NOTE: contracts.yaml (the contract itself) is YAML, so validate.py cannot run
+# without pyyaml even when the spec is .json. Saying "json needs nothing" here
+# used to make the spec gate skip silently: validate.py SystemExit'd, and
+# run.py still reported exit=0.
 if "$py" -c "import yaml" >/dev/null 2>&1; then
-    ok "pyyaml present (.yaml specs available)"
+    ok "pyyaml present (spec gate + .yaml specs available)"
 else
-    warn "pyyaml missing: .yaml specs need it; .json specs need nothing"
+    warn "pyyaml missing: the spec gate cannot run (contracts.yaml is YAML)"
     hint "pip install pyyaml"
     if [ "$check_only" != "1" ]; then
         "$py" -m pip install --quiet pyyaml && ok "pyyaml installed" \
-            || warn "auto-install failed; use .json specs or install manually"
+            || warn "auto-install failed; the spec gate will be skipped, install it manually"
     fi
 fi
 

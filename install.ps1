@@ -112,9 +112,9 @@ if ($py) {
 # ---- 3) yaml support (optional; .json specs need nothing) ----
 $r = Native $py @("-c", "import yaml")
 if ($r.code -eq 0) {
-    Ok "pyyaml present (.yaml specs available)"
+    Ok "pyyaml present (spec gate + .yaml specs available)"
 } else {
-    Warn "pyyaml missing: .yaml specs need it; .json specs need nothing"
+    Warn "pyyaml missing: the spec gate cannot run (contracts.yaml is YAML)"
     Hint "pip install pyyaml"
     if (-not $CheckOnly) {
         $r2 = Native $py @("-m", "pip", "install", "--quiet", "pyyaml")

@@ -1,2 +1,5 @@
-# 只有读 .yaml 规格才需要 pyyaml；把规格写成 .json 可以完全不装依赖。
+# 规格门（validate.py）用它解析 templates/contracts.yaml —— 契约本体是 YAML，
+# 所以**规格写成 .json 也离不开 pyyaml**。
+# （早先这里写"只有 .yaml 规格才需要"，于是 .json 规格会静默跳过规格门：
+#   validate.py 直接 SystemExit，而 run.py 照样报 exit=0。）
 pyyaml>=6.0

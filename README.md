@@ -80,7 +80,8 @@ python scripts/run.py examples/json/agent-roadmap.json --out out/demo           
 python scripts/run.py examples/json/agent-roadmap.json --budget --no-render      # 只看每槽字数预算
 ```
 
-- 依赖只有 Python 3.8+ 和任意 Chromium 浏览器（自动探测），字体已内置；`.json` 规格零第三方依赖
+- 依赖只有 Python 3.8+、`pyyaml` 和任意 Chromium 浏览器（自动探测），字体已内置；
+  `pyyaml` 是**规格门**要的（契约本体 `templates/contracts.yaml` 是 YAML），**写 `.json` 规格也省不掉**
 - 规格怎么写直接抄 [examples/](examples/)（拿 `examples/agent-roadmap.json` 跑一遍就有成品）
 
 ---
@@ -195,7 +196,7 @@ python scripts/run.py --plan <文章.md>      # 汉字数 / 节数 → 建议张
 | 依赖 | 必需？ | 说明 |
 |---|---|---|
 | Python 3.8+ | 必需 | 核心脚本只用标准库 |
-| pyyaml | 可选 | 只有 .yaml 规格需要；**.json 规格零第三方依赖** |
+| pyyaml | **必需** | 规格门要拿它解析契约本体 `templates/contracts.yaml`；**写 `.json` 规格也省不掉**（缺了规格门会静默跳过） |
 | Chromium 浏览器 | 渲染必需 | Chrome / Edge / Chromium，自动探测（CDP 或 CLI 后端） |
 | 多模态模型 | 可选 | 正确性校验是纯文本度量；视觉只多一步审美终检 |
 
