@@ -41,6 +41,13 @@ from render import find_browser, shoot, file_url  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAX_ITER = 3
 
+# ★ 软提示类问题：**不挡交付**，只报给 agent 看。判定依据是 SKILL.md 的口径
+#   （"dom-orphan 是提示，能改就改"；"真正会把 LLM 拉回来只有两类：
+#   dom-overflow 和页数超硬上限"）。
+#   早先 dom-orphan 和 dom-overflow 同桶 → 被写进 needs_llm、run.py 判成硬问题、
+#   整轮 exit=1，agent 只能返工。实测为此白跑 2 轮（8 页稿，两条末行只剩 11% / 18% 宽）。
+SOFT_KINDS = ("dom-orphan",)
+
 
 # ---------------------------------------------------------------- 节点
 def node_build(state):
@@ -89,31 +96,41 @@ def node_measure(state):
         if iss:
             issues["card-%02d" % (i + 1)] = iss
     state["issues"] = issues
-    total = sum(len(v) for v in issues.values())
-    state["log"].append("measure: %d 处溢出" % total)
+    hard = sum(1 for v in issues.values() for i in v if i["kind"] not in SOFT_KINDS)
+    soft = sum(1 for v in issues.values() for i in v if i["kind"] in SOFT_KINDS)
+    # ★ 「N 处溢出」必须把孤字摘出去：dom-orphan 是**提示**（SKILL.md 明写"能改就改"），
+    #   混进"溢出"的计数里会让 agent 以为必须返工（实测为此白跑 2 轮）。
+    state["log"].append("measure: %d 处溢出%s"
+                        % (hard, "（另有 %d 处孤字提示，不影响交付）" % soft if soft else ""))
 
 
 def node_verify(state):
     """条件边：干净 → render；有溢出 → 分流。"""
     width_issues = {}
     layout_issues = []
+    soft_issues = []
     for page, lst in state["issues"].items():
         for i in lst:
-            if (i["kind"] == "out-of-canvas" and i.get("where") == "y") \
+            if i["kind"] in SOFT_KINDS:
+                # ★ 孤字 = "末行只剩 1~2 字"，SKILL.md 定性为**提示**，不该挡交付。
+                #   单独一桶，既不进 needs_llm 也不进 autofix。
+                soft_issues.append((page, i))
+            elif (i["kind"] == "out-of-canvas" and i.get("where") == "y") \
                     or i["kind"] in ("v-overflow", "missing-text", "overlap",
                                      "crosses-line", "crosses-frame", "crosses-box",
-                                     "dom-overflow", "dom-orphan"):
+                                     "dom-overflow"):
                 # 版式 / 内容问题，脚本修不了：v-overflow 要减条数或拆页，
                 # missing-text 是引擎把字吞了，几何门那几类（重叠/压线/压框/穿框）
                 # 只能靠改文案或换版式 —— **绝不能喂给 autofix**：它不是宽度问题，
                 # 注入 textLength 只会把字压扁，还会把 calib 抬高去污染无关卡片。
-                # dom-overflow / dom-orphan 同理：DOM 模式下浏览器已经把字号缩到最小，
+                # dom-overflow 同理：DOM 模式下浏览器已经把字号缩到最小，
                 # 再注入 textLength 毫无意义（实测白烧 3 轮）→ 直接交回改文案或换版式。
                 layout_issues.append((page, i))
             else:
                 width_issues.setdefault(page, []).append(i)
     state["width_issues"] = width_issues
     state["layout_issues"] = layout_issues
+    state["soft_issues"] = soft_issues
 
 
 def node_autofix(state):
@@ -197,14 +214,16 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
         if state["layout_issues"] and not state["width_issues"]:
             # 内容被吞 / 版式撑破：再跑几轮结果一模一样，直接点名给 LLM 改文案
             state["log"].append("verify: 内容或版式问题脚本修不了，直接交回 LLM 改文案")
-            state["needs_llm"] = [(p, i["text"]) for p, i in state["layout_issues"]]
+            state["needs_llm"] = [(p, i.get("text", ""), i.get("note", ""))
+                                  for p, i in state["layout_issues"]]
             break
         if it == MAX_ITER:
             state["log"].append("verify: %d 轮后仍有溢出，标记给 LLM 重写文案"
                                 % MAX_ITER)
-            state["needs_llm"] = [(p, i["text"]) for p, lst in
-                                  state["width_issues"].items() for i in lst]
-            state["needs_llm"] += [(p, i["text"]) for p, i in state["layout_issues"]]
+            state["needs_llm"] = [(p, i.get("text", ""), i.get("note", ""))
+                                  for p, lst in state["width_issues"].items() for i in lst]
+            state["needs_llm"] += [(p, i.get("text", ""), i.get("note", ""))
+                                   for p, i in state["layout_issues"]]
             break
         node_autofix(state)
         node_build(state)
@@ -220,8 +239,17 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True):
                     print("    %s  %s" % (page, w))
         if state.get("needs_llm"):
             print("\n  ⚠ 以下文案需要 LLM 重写（脚本压不下了）：")
-            for p, t in state["needs_llm"]:
-                print("    %s  「%s」" % (p, t))
+            for p, t, n in state["needs_llm"]:
+                # ★ 一定要带 note（实测值）：只说"这条不行"、不说"差多少"，
+                #   agent 就得靠试错猜要砍几个字，一轮变两三论。
+                print("    %s  「%s」%s" % (p, t, ("  ← " + n) if n else ""))
+        if state.get("soft_issues"):
+            # ★ 单独一段、明写"不影响交付"：否则 agent 会把它当成必须改的硬问题，
+            #   又白跑一轮（这正是 SOFT_KINDS 存在的原因）。
+            print("\n  · 提示（**不影响交付**，能改更好）：")
+            for p, i in state["soft_issues"]:
+                print("    %s  「%s」%s"
+                      % (p, i.get("text", ""), ("  ← " + i["note"]) if i.get("note") else ""))
     state["seconds"] = time.perf_counter() - t0
     return state
 

@@ -103,11 +103,37 @@ def main():
         if rc_pipe != 0 and "measure:" not in o:
             hard.append("像素门｜pipeline 异常退出（exit=%d）：%s"
                         % (rc_pipe, (o.strip().splitlines() or [""])[-1][:110]))
+    # ★ pipeline 的 needs_llm 明细是「缩进的一行一条」，必须整块收进来。
+    #   原来只把标题行（"⚠ 以下文案需要 LLM 重写"）记进 hard，逐条明细全丢了 ——
+    #   于是结论只剩一句"需要 LLM 重写"，agent 根本不知道改哪句、差多少，
+    #   只能回头单独跑一次 pipeline.py 才看得到（实测多花一整轮）。
+    _in_llm = _in_soft = False
     for l in o.splitlines():
         s = l.strip()
         if re.search(r"measure:|verify:|降级 |耗时", s):
             print("④ 像素门   " + s)
-        if re.search(r"crosses-|overlap|需要 LLM 重写", s):
+        if "需要 LLM 重写" in s:
+            _in_llm, _in_soft = True, False
+            hard.append("像素门｜" + s[:110])
+            continue
+        if s.startswith("·") and "不影响交付" in s:
+            # ★ 孤字提示段落：**不是硬问题**，收进 soft。它原来和 needs_llm 同段，
+            #   run.py 只看"需要 LLM 重写"标题就判硬 → 一条孤字提示让整轮 exit=1。
+            #   ★ 必须同时判行首的「·」：measure: 那行也带"不影响交付"字样，
+            #   只按字样匹配会把后面的 verify:/render: 全吞进来（实测踩过）。
+            _in_soft, _in_llm = True, False
+            continue
+        if _in_llm:
+            if s:
+                hard.append("像素门｜  " + s[:110])
+                continue
+            _in_llm = False
+        if _in_soft:
+            if s and not s.startswith("耗时"):
+                soft.append("孤字提示｜" + s[:110])
+                continue
+            _in_soft = False
+        if re.search(r"crosses-|overlap", s):
             hard.append("像素门｜" + s[:120])
         if s.startswith("[") and re.search(r"缩到|密集档|截断", s):
             soft.append(s)
@@ -149,7 +175,7 @@ def main():
         print("  四道门已逐页量过（见上面的逐页表）。看图只对'配色疏密'这类主观项有意义，")
         print("  单次 40~250 秒 —— 想看就只看 1 张封面，并在报告里注明'审美已抽查 1 张'。")
     if soft:
-        print("· 引擎自己兜住的妥协（%d 处，无需改文案）：" % len(soft))
+        print("· 提示（%d 处，**不影响交付**、无需改文案）：" % len(soft))
         for s in soft[:6]:
             print("   " + s[:110])
     # ★ 交付报告：数字由脚本填好、格式与 SKILL.md 的模板一致 —— 省掉 agent 自己拼装那一轮
