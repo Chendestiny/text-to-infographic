@@ -42,6 +42,12 @@ def load_spec(path):
     return yaml.safe_load(raw)
 
 
+def _cjk_len(s):
+    """汉字口径长度：汉字/全角标点 = 1，其余（拉丁/数字/空格）= 0.5。
+    `[[高亮]]` 标记本身不计（用 ink.strip_hl 去掉）。"""
+    return sum(1.0 if ord(c) > 0x2E80 else 0.5 for c in ink.strip_hl(s or ""))
+
+
 def judge(entry):
     """按登记到的几何判定一个槽：ok / dense / overflow。"""
     text, size, maxw = entry["text"], entry["size"], entry["maxw"]
@@ -87,8 +93,22 @@ def scan(spec):
         entries = [judge(e) for e in list(ink._CAPS)]
         # DOM 槽（flow/chain/compare 已迁移）：它们的"预算"就是槽尺寸 + 起手字号，
         # 缩多少由浏览器的 autofit 实测决定 —— 不在这里估算
+        # ★ 但**必须给个「约 N 字」**：只给尺寸、不给字数的表，写文案时等于没有参考
+        #   （实测：compare 每列 3 block + 1 note 时 block 只剩约 6 字，看不到就会写到 9 字）。
+        #   这只是几何估算，所以**不下 verdict**，避免误报"必须改短"又把 agent 拉回来改文案。
+        _unit = max(1.0, ink.CALIB[0])
+
+        def _cap(w, size, clamp):
+            """槽宽 ÷ 字号 × 行数 = 约几个汉字。"""
+            return int(w / max(1.0, size * _unit)) * max(1, clamp)
+
         dom = [{"tag": "dom", "text": sl["text"], "size": sl["size"], "maxw": sl["w"],
-                "max_lines": sl["clamp"], "verdict": "dom", "cap_chars": 0,
+                "max_lines": sl["clamp"], "verdict": "dom",
+                # 「舒适」= 起手字号就放得下；「下限」= 浏览器 autofit 缩到 min_size 还能放
+                # （_reg_slot 的 min_size = max(12, size*0.55)）。判定用**下限**，
+                # 因为浏览器本来就会缩字号 —— 拿起手字号判会刷一堆误报（实测 18 条里误报 6 条）。
+                "cap_chars": _cap(sl["w"], sl["size"], sl["clamp"]),
+                "cap_floor": _cap(sl["w"], max(12, int(sl["size"] * 0.55)), sl["clamp"]),
                 "w_std": 0, "lines_std": 0, "w": sl["w"], "h": sl["h"]}
                for sl in list(ink._SLOTS)]
         pages.append({"page": "card-%02d" % (i + 1), "layout": card.get("layout"),
@@ -114,6 +134,7 @@ def main():
     tight = [s for p in pages for s in p["slots"]
              if s["verdict"] == "ok" and s["maxw"] and s["w_std"] / s["maxw"] > 0.9]
     total = sum(len(p["slots"]) for p in pages)
+    n_dom = sum(len(p.get("dom") or []) for p in pages)
 
     print("几何容量（%d 页 / %d 个文字槽；不是契约上的建议值，是引擎实测的几何）"
           % (len(pages), total))
@@ -137,6 +158,15 @@ def main():
                       % (p["page"], p["layout"], s["tag"], why.split("（")[0],
                          s["verdict"], s["text"][:30]))
                 print("      注意：%s" % why)
+    elif n_dom:
+        # ★ 这里**不能**报"都放得下"：文字槽已全部迁到 DOM，`_CAPS` 恒为空表，
+        #   于是这个分支其实**一个槽都没判过** —— 报"✓"就是假绿。
+        #   实测踩过：--budget 报「所有槽在标准字号下都放得下 ✓」，
+        #   紧接着真跑 pipeline 就是 3 处 dom-overflow，白信它一轮。
+        print("★ 没有可判定的槽：文字已全部迁到 DOM（%d 个槽），折行/缩放由浏览器决定。"
+              % n_dom)
+        print("  真实结论只能跑：python scripts/run.py <spec.json> --no-render")
+        print("  下表里的「约 N 字」是按槽宽 ÷ 字号估的，写文案时拿它当参考线。")
     else:
         print("★ 所有槽在标准字号下都放得下 ✓")
     if tight:
@@ -163,13 +193,18 @@ def main():
 
         doms = [d for p in pages for d in (p.get("dom") or [])]
         if doms:
-            print("\n=== DOM 文字槽（已迁移版式：折行/缩放由浏览器负责，这里只给槽尺寸）===")
-            doms.sort(key=lambda d: d["w"])
+            print("\n=== DOM 文字槽（折行/缩放由浏览器负责；「约 N 字」是按槽宽÷字号估的参考线）===")
+            doms.sort(key=lambda d: d["cap_floor"])          # 越紧的越在上面
             for d in doms[:18]:
-                print("     槽 %4.0fx%-4.0f 起手字号 %2d 最多 %d 行  ｜%s"
-                      % (d["w"], d["h"], d["size"], d["max_lines"], d["text"][:24]))
+                n = _cjk_len(d["text"])
+                flag = " ⚠超下限" if n > d["cap_floor"] + 0.5 else "        "
+                print("     槽 %4.0fx%-4.0f 字号 %2d 行%d ｜约 %2d 字（缩到下限 %2d 字）%s｜%s"
+                      % (d["w"], d["h"], d["size"], d["max_lines"],
+                         d["cap_chars"], d["cap_floor"], flag, d["text"][:20]))
             if len(doms) > 18:
                 print("     …共 %d 个槽（只列最窄的 18 个）" % len(doms))
+            print("  注：「约 N 字」是几何估算，不是判定。浏览器会先缩字号兜住，所以只有"
+                  "超过**下限**才标 ⚠；真放不下以 run.py 的像素门为准。")
 
     if args.all:
         print("\n=== 全部槽 ===")
