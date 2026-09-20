@@ -21,32 +21,38 @@
 ```
 文章.md
   │
-  ├─[LLM]─> spec.json ─────────────────────────────── 唯一需要模型的一步
-  │            │
-  │            ├─ validate.py ──── 规格门（字数契约，纯脚本，零 token）
-  │            │      └ 违规 → 报精确路径 → LLM 改那一条 → 重跑
-  │            │
-  │            └─ pipeline.py
-  │                   ├─ build.py          规格 → HTML（ink.py 渲染）
-  │                   ├─ measure.py        像素门：真实浏览器 getBBox 量文本
-  │                   ├─ verify            溢出分流
-  │                   │     ├ 宽度类 → autofix（校准估算器 + textLength）→ 回 build（≤3 轮）
-  │                   │     └ 内容/版式类 → needs_llm 清单 → 直接交回 LLM（不空转轮次）
-  │                   └─ render.py         HTML → PNG
-  └─────────────────────────────────────────────────> out/card-01..N.png
+  ├─ run.py --plan ──> 张数 + 区间 + 每页骨架 + 可粘贴的 meta.plan（纯脚本算，不用模型推）
+  │
+  └─[LLM]─> spec.json ─────────────────────────────── 唯一需要模型的一步
+               │
+               └─ run.py <spec.json> --article <文章.md> --out <目录>
+                      │
+                      ├ ① 预检    preflight.py   数量词 vs 规格里实际的条数
+                      ├ ② 页数    对账 plan.py 给出的区间
+                      ├ ③ 规格门  validate.py    结构 + 几何硬墙（字数只是写作建议）
+                      └ ④ 像素门  pipeline.py
+                             build.py   规格 → HTML（ink.py 画墨迹 + _reg_slot 登记文字槽）
+                             measure.py 真实浏览器量 DOM 槽与方框
+                                ├ 真放不下（缩到下限仍溢出）→ dom-overflow → 交回 LLM 改文案
+                                └ 末行只剩 1~2 字          → dom-orphan  → 提示，能改就改
+                             内容门：规格里登记过的文字必须真的出现在图上（防静默吞字）
+                             render.py  HTML → PNG
+  ──────────────────────────────────────────────────> out/card-01..N.png
 ```
 
 `pipeline.py` 是 LangGraph 风格的状态机（State / Node / Conditional Edge），
 但**不依赖 langgraph 包**——节点就是函数，状态就是一个 dict。需要时可以平移。
 
-## 两道门为什么都要有
+## 四道门为什么都要有
 
 | 门 | 成本 | 抓什么 | 漏什么 |
 |---|---|---|---|
-| 规格门 `validate.py` | 毫秒级（含一次无浏览器渲染算几何） | 结构问题 + **几何放不下**（丢字 / 缩到不可读） | 真实字体度量偏差（由像素门兜） |
-| 像素门 + 几何布局门 `measure.py` | 每页一次无头浏览器（`getBBox` 量宽 + `getBoundingClientRect` 量位置） | 溢出、越界、文字互相压住、压线、穿框 | 配色与疏密这类主观项 |
+| ① 预检 `preflight.py` | 毫秒级，纯字符串 | 数量词与规格里实际的条数对不上（写「3 个」却排了 5 条） | 排版类问题（交给后面的门） |
+| ② 规格门 `validate.py` | 毫秒级（含一次无浏览器渲染算几何） | 结构问题（未知字段 / note 不渲染 / 条数越界 / 页数超硬上限）+ **几何放不下** | 真实字体度量偏差（由像素门兜） |
+| ③ 像素门 + 几何布局门 `measure.py` | 每页一次无头浏览器（DOM 槽 `getBoundingClientRect` + 方框求交） | `dom-overflow` 真放不下、越界、文字互相压住、压线、穿框 | 配色与疏密这类主观项 |
+| ④ 内容门（在像素门里） | 复用同一次浏览器 | 登记过的文字**根本没画出来**、被截成「…」的断尾 | 只知道"少了"，不判好不好看 |
 
-**能机械校验的绝不交给模型判断。** 两道门都是纯脚本，不花 token；
+**能机械校验的绝不交给模型判断。** 四道门都是纯脚本，不花 token；
 只有像素门把某几条升级成 `needs_llm` 时，模型才回来改文案。
 
 ### 像素门里还包着一道「内容门」
@@ -74,8 +80,10 @@
 `tw()` 乘上它。估算器自己越跑越准，这就是为什么大多数规格**第 1 轮就干净**、
 而剩下的也能在第 2 轮收敛。
 
-对仍溢出的单行文本，autofix 直接注入 SVG 的 `textLength` + `lengthAdjust=spacingAndGlyphs`
-（等比压缩字形和字距），保证压回框内。
+文字迁到 DOM 后，**单行的兜底不再靠注入 `textLength`**：页面尾部注入的 autofit 脚本
+拿槽盒子的 `scrollHeight` 与 `clientHeight` 比，放不下就把字号缩 1px 再比，一直缩到
+`min_size` 为止。`CALIB` 仍服务于估算器 `tw()`，但它现在只影响**墨迹与槽的摆位**，
+不再决定文字能不能放下——放下与否由浏览器说了算。
 
 ## LLM 的位置（两处，都在明处）
 
@@ -89,16 +97,19 @@
 
 | 文件 | 职责 |
 |---|---|
+| `scripts/run.py` | **唯一入口**：三种用法（`--plan` / `--budget --no-render` / 交付），四道门与交付报告都并在这一次调用里 |
 | `scripts/ink.py` | 渲染核心：手绘原语、13 种版式、页面装配、`CALIB` |
 | `scripts/decor.py` | 装饰零件（齿轮/星形，纯 SVG path）+ 颜色轮换 |
 | `scripts/build.py` | CLI：规格 → HTML（支持 yaml / json） |
 | `scripts/plan.py` | CLI：页数规划（建议张数 + 每页骨架，把「推导」变成「答案」） |
+| `scripts/preflight.py` | CLI：文字级预检（数量词 vs 实际条数），零成本、不起浏览器 |
 | `scripts/capacity.py` | CLI：DOM 槽尺寸与起手字号（迁移前是手写容量的依据，现由浏览器实测取代） |
 | `scripts/validate.py` | CLI：规格门（结构 + 几何硬违规，字数只提示） |
-| `scripts/measure.py` | 真实浏览器文本测量（像素门）+ 方框清单比对 |
+| `scripts/measure.py` | 真实浏览器文本测量（像素门 + 内容门）+ 方框清单比对 |
 | `scripts/render.py` | CLI：HTML → PNG（后端选择 + 跨平台浏览器探测） |
 | `scripts/cdp.py` | 纯标准库 CDP 客户端（默认渲染后端） |
 | `scripts/pipeline.py` | 编排：build → measure → 修正循环 → render |
+| `scripts/review_sheet.py` | CLI：复核缩略图（720px，抽查观感时用） |
 | `scripts/vision_probe.py` | 读图能力判定（多模态三态，看到底能不能看图） |
 | `scripts/doctor.py` | 环境自检（含渲染后端预检） |
 | `templates/contracts.yaml` | 每种版式的字数预算（**契约本体**） |
@@ -109,8 +120,9 @@
 
 SVG `<text>` **没有文字排版能力**：不折行、没有 `text-overflow`、没有"按内容缩字号"，
 一行 `<text>` 就是一串按坐标摆好的字形。于是"折行/居中/省略/缩放"全得自己算 ——
-`wrap_text` / `fit` / 每槽的字数预算 / `CALIB` 校准回环 / `textLength` 注入，
-这一整套机器都是为绕开这个限制而存在的，也是"每改一个视觉细节都要穿过几百行适配代码"的来源。
+旧实现为此养了 `wrap_text` / `fit` / 每槽的字数预算 / `CALIB` 校准回环 / `textLength` 注入
+一整套机器，这也是"每改一个视觉细节都要穿过几百行适配代码"的来源。
+（这套机器里已经没有调用点的部分，如 `fit()` 与 `txt()`，已随迁移删除。）
 
 改法（用户定的方向，已落地）：**手绘墨迹继续用 SVG，文字交给 DOM**。
 
@@ -131,11 +143,12 @@ SVG `<text>` **没有文字排版能力**：不折行、没有 `text-overflow`�
   报 `dom-overflow`（真放不下）与 `dom-orphan`（末行 ≤2 字或 <20% 宽）；
   并把 DOM 槽纳入几何求交（`crosses-box` / `crosses-line` / `overlap`），与 SVG 文字对等
 
-**迁移状态**（`text: "dom"` 时代已经过去，现在没有开关）：
+**迁移状态：13/13 已完成**（`text: "dom"` 时代已经过去，现在没有开关）：
 
 | 版式 | 状态 |
 |---|---|
-| flow / chain / compare | ✅ 已迁（SVG 文字分支已删除） |
+| arch / chain / compare / cover（含四宫格 mini）/ cycle / flow / hub / matrix / pyramid / spectrum / timeline | ✅ 已迁（SVG 文字分支已删除） |
 | bullets | ✅ 本来就是 HTML 行（浏览器排版） |
-| hub / arch / cycle / spectrum / timeline / matrix / pyramid / cover（含四宫格 mini） | 迁移中 |
-| raw | 透传原始 SVG，不涉及 |
+| raw | 透传原始 SVG，不涉及文字槽 |
+
+验收证据：逐版式检查"stage 里 `<text>` 元素 = 0"。

@@ -13,20 +13,20 @@ version: 1.0.0
 > 一篇长文 → 一套直接能发的小红书图文。你**只出规格、不碰像素**：字号 / 留白 / 描边 / 配色
 > 全由 `scripts/ink.py` 决定，所以同一份规格永远出同一套图，每一页都能手改。
 
-**四条命令就是全部工具面**（先看这张表，细节按需查）：
+**全部工具面就是 `run.py` 一条命令，三种用法**（先看这张表，细节按需查）：
 
-**只有两条命令，别分头跑**（实测：分头跑 validate/pipeline/preflight/capacity 会让一轮多出
+**别分头跑**（实测：分头跑 validate/pipeline/preflight/capacity 会让一轮多出
 20+ 次调用，全花在"自己拼输出"上）：
 
 | 什么时候用 | 命令 |
 |---|---|
-| ① 决定拆几页（**只跑一次**） | `python scripts/plan.py <文章.md>` → 页数 + 区间 + 每页骨架 + 可直接粘贴的 `meta.plan` |
+| ① 决定拆几页（**只跑一次**） | `python scripts/run.py --plan <文章.md>` → 页数 + 区间 + 每页骨架 + 可直接粘贴的 `meta.plan` |
 | ② 写规格阶段 | `python scripts/run.py <spec.json> --budget --no-render` → 每槽字数预算 + 预检 + 规格门 |
 | ③ 交付 | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` → 预检 + 页数对账 + 规格门 + 像素门/几何门 + 出图 + 复核缩略图 + **一句结论** |
 
-**四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 / 几何布局门）。
-**不要在 run.py 之外单独跑 validate.py / pipeline.py / preflight.py** —— 它们的结果全都已经并在
-run.py 的结论里，重复跑只是多烧时间。
+**四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 + 几何布局门 / 内容门）。
+**不要在 run.py 之外单独跑 plan.py / validate.py / pipeline.py / preflight.py** —— 它们的结果
+全都已经并在 run.py 的结论里，重复跑只是多烧时间。
 
 ---
 
@@ -38,20 +38,21 @@ run.py 的结论里，重复跑只是多烧时间。
 
 **第 2 步 · 切页：跑脚本，别自己推**
 ```bash
-python scripts/plan.py <文章.md>
+python scripts/run.py --plan <文章.md>
 ```
 它输出：汉字数 / 节数 / 每节字数 → **建议张数 + 允许区间 + 每页骨架**。
 区间 **4~9 张**（6~9 是小红书平台偏好区，平台上限 18，超过 12 该拆系列）。
 张数 ≈ 1（封面）+ 章节数；平均每节 <400 汉字两节并一页；全篇 <1.5k 汉字压到 4~5 张 ——
-这些 plan.py 都替你算完并写出了推导。
+这些 `--plan` 都替你算完并写出了推导。
 **页数由"切法"决定，不随行数增长**：228 行是 7 张，1000 行也是 8~9 张，永远不是 100 张。
 写完规格**拿脚本对一次账**（张数是硬数字，不是你发挥的地方）：
 
 ```bash
-python scripts/plan.py <文章.md> --check <spec.json>
+python scripts/run.py <spec.json> --article <文章.md> --no-render
 ```
 
-把 plan.py 打印的 `"plan": {...}` 原样复制进规格的 `meta`。门禁按它判页数：
+（交付时给了 `--article` 也会自动做这一步；这里只是想早点看到结果。）
+把 `--plan` 打印的 `"plan": {...}` 原样复制进规格的 `meta`。门禁按它判页数：
 **建议值或区间内 = 通过；最多上浮 1 张且要写 `meta.plan.note`；超过上沿 +1 = 硬违规**
 （默认动作是**合并相邻页**，不是写理由）。细节见 [docs/contracts.md](docs/contracts.md)。
 
@@ -99,9 +100,9 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 
 | 环节 | 谁做 | 能并行吗 |
 |---|---|---|
-| 切页 + 页骨架 | `plan.py`（脚本） | 答案已经算好，不用模型推 |
+| 切页 + 页骨架 | `run.py --plan`（脚本） | 答案已经算好，不用模型推 |
 | 写规格 | 你，或一个文案 subagent（输入 = 文章 + 骨架 + 字段表） | **能**：一篇 = 一个单元 |
-| 渲染 + 两道门 | `validate.py` / `pipeline.py`（纯脚本，0 token） | 能但没必要（0.5s/页） |
+| 过门 + 渲染 + 出图 | `run.py`（纯脚本，0 token） | 能但没必要（0.5s/页） |
 | 逐张复核 | 看图 subagent（只报上面四类） | **能**：一次复核分 2~3 片 |
 
 同一篇内部（写规格 → 过门 → 渲染 → 复核 → 返工）**必须串行**，有依赖。
@@ -151,7 +152,7 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 
 | 症状 | 读哪 |
 |---|---|
-| 页数 / 密度拿不准 | 本文第 2 步 + `plan.py` 的输出 |
+| 页数 / 密度拿不准 | 本文第 2 步 + `run.py --plan` 的输出 |
 | 报 `dom-overflow` / `dom-orphan` | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | 报未知字段 / note 不渲染 | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | 不知道某版式有哪些字段 | [docs/layouts.md](docs/layouts.md)（含字段支持总表） |
@@ -164,10 +165,13 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 
 ## 六、交付检查清单
 
-- [ ] `validate.py` **0 硬违规**（几何墙）
-- [ ] `pipeline.py` 没有 `needs_llm` 清单（若有，只可能是 `dom-overflow` 或结构问题）
-- [ ] 页数落在 `plan.py` 给的区间内（4~9）
-- [ ] **跑过 `preflight.py`**（孤字 / 断词 / 数量词）且已改完；像素门 0 溢出、无遗漏的降级报告
+一条 `run.py <spec.json> --article <文章.md> --out <目录>` 跑完，看它的结论段就够：
+
+- [ ] ① 预检：数量词与规格里实际的条数一致（孤字 / 断词已移到浏览器侧，由 `dom-orphan` 报）
+- [ ] ② 页数：落在 `run.py --plan` 给的区间内（4~9）
+- [ ] ③ 规格门：**0 硬违规**（结构 + 几何墙）
+- [ ] ④ 像素门：0 溢出、无 `crosses-*` / `overlap`，降级报告无遗漏
+- [ ] 结论段是「✓ 硬问题 0 处」；若有 `needs_llm`，只可能是 `dom-overflow` 或结构问题
 - [ ] 交付时给了门禁逐字输出 + 页数理由 + 降级报告 + 自检结论
 - [ ] 产物：`card-01..N.png`，默认 2160×2880（3:4 的 2 倍图）。
       要调风格改 `assets/style.md` 里的常量，**不要**改单页 HTML —— 一页一改风格就飘了

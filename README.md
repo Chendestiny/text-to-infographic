@@ -10,7 +10,7 @@
 字号、留白、描边、配色全由代码决定：
 
 ```
-文章.md ──> [LLM] spec.json ─> validate ──> build ──> measure（真实浏览器实测）──> PNG × N
+文章.md ──> run.py --plan ──> [LLM] spec.json ──> run.py（四道门 + 出图）──> PNG × N
 ```
 
 ---
@@ -61,9 +61,9 @@
 |---|---|
 | 装完 clone + 探环境 + 跑 `doctor`，缺依赖自己补 | 安装脚本 |
 | 按五步走：读文章 → 写规格 → **过规格门** → 跑流水线 → 交图 | SKILL.md 第 1~5 步 |
-| 页数**跑 `plan.py` 拿答案**（含页骨架），不自己推公式 | SKILL.md 第 2 步 + `scripts/plan.py` |
+| 页数**跑 `run.py --plan` 拿答案**（含页骨架），不自己推公式 | SKILL.md 第 2 步 + `scripts/run.py --plan` |
 | 容量**跑 `run.py --budget` 看槽尺寸**（折行/缩放交给浏览器），不靠背字数上限 | `scripts/run.py --budget` |
-| 两道门都要过；出现 `needs_llm` 就改文案重跑，不许跳门 | SKILL.md 第 4~5 步 |
+| 四道门都要过；出现 `needs_llm` 就改文案重跑，不许跳门 | SKILL.md 第 4~5 步 |
 | **复核看拼版图**（720px 缩略图 + 2×2 拼版，一次 4 张），只问断词/孤字/压字/数量词 | `scripts/review_sheet.py` |
 | 每次跑完把**逐页体检表 + 问题明细**摊开（`dom-overflow` / `dom-orphan` / 压框 / 重叠，逐卡点名），不藏问题 | `scripts/pipeline.py` |
 | 用 **rect 求交**查压字/压线/穿框（不用视觉模型），视觉只留最后一道审美抽查 | `scripts/measure.py` |
@@ -76,8 +76,8 @@
 ```bash
 git clone https://github.com/Chendestiny/text-to-infographic
 cd text-to-infographic
-python scripts/validate.py spec/my-deck.json                     # 规格门：逐条核对字数预算
-python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → 实测 → 出图
+python scripts/run.py examples/json/agent-roadmap.json --out out/demo            # 四道门 + 出图
+python scripts/run.py examples/json/agent-roadmap.json --budget --no-render      # 只看每槽字数预算
 ```
 
 - 依赖只有 Python 3.8+ 和任意 Chromium 浏览器（自动探测），字体已内置；`.json` 规格零第三方依赖
@@ -108,7 +108,7 @@ python scripts/pipeline.py spec/my-deck.json -o out/my-deck       # build → �
 真要算的时候**跑脚本，别自己推**：
 
 ```bash
-python scripts/plan.py <文章.md>      # 汉字数 / 节数 → 建议张数 + 区间 + 每页骨架
+python scripts/run.py --plan <文章.md>      # 汉字数 / 节数 → 建议张数 + 区间 + 每页骨架
 ```
 
 **容量同理**：契约里的字数只是**写作建议**，真实放不放得下由**浏览器实测**说话 ——
@@ -117,7 +117,7 @@ python scripts/plan.py <文章.md>      # 汉字数 / 节数 → 建议张数 + 
 
 ---
 
-## 🧭 怎么保证不出丑：两道门、三道检查
+## 🧭 怎么保证不出丑：四道门
 
 每种版式的**每个文字槽位**都在 [templates/contracts.yaml](templates/contracts.yaml)
 里声明了字数预算，数值来自实际渲染好看的真实文案——不是拍脑袋。文案是在预算内写出来的，
@@ -125,11 +125,14 @@ python scripts/plan.py <文章.md>      # 汉字数 / 节数 → 建议张数 + 
 
 | 门 | 是什么 | 抓什么 |
 |---|---|---|
-| **规格门** `validate.py` | 纯字符串计算，毫秒级，零 token | 文案超预算，报**精确路径**：`card-03(chain).steps[1].text  17.5 > max 15` |
-| **像素门** `measure.py` | 真实浏览器渲染，用 `getBBox()` 量**每个文本的真实包围盒** | 真实宽度溢出、画到画布外、压出方框、HTML 行撑破卡片底边 |
-| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字**，以及被引擎截成「…」的断尾 |
+| **预检** `preflight.py` | 纯字符串计算，毫秒级，零 token | 数量词与规格里实际的条数对不上（写「3 个」却排了 5 条） |
+| **规格门** `validate.py` | 无浏览器渲染一遍算几何，毫秒级，零 token | 结构问题（未知字段 / `note` 不渲染 / 条数越界 / 页数超硬上限）+ **几何硬墙**；字数超预算只提示，报精确路径 |
+| **像素门** `measure.py` | 真实浏览器渲染，量每个 **DOM 文字槽**与方框的矩形 | `dom-overflow` 真放不下、画到画布外、压出方框、文字互相压住 |
+| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字**，以及被截成「…」的断尾 |
 
-压不下的文案会进 `needs_llm` 清单，让模型拿到精确报错而不是「看起来坏了」。
+四道门全并在一条命令里，跑完直接给结论：
+`python scripts/run.py <spec.json> --article <文章.md> --out <目录>`。
+放不下的文案会进 `needs_llm` 清单，让模型拿到精确报错而不是「看起来坏了」；
 内容类问题不会再空跑几轮校准（脚本修不了），一轮就点名到具体哪一句。
 细节：[docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md)。
 
@@ -200,10 +203,12 @@ python scripts/plan.py <文章.md>      # 汉字数 / 节数 → 建议张数 + 
 
 ```
 SKILL.md                  面向 Agent 的入口（工作流 + 契约 + 文案纪律）
+scripts/run.py            唯一入口：--plan 规划 / --budget 看预算 / 交付（四道门 + 出图 + 报告）
 scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装配
 scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
 scripts/build.py          CLI：规格 → HTML
 scripts/plan.py           CLI：页数规划（两级切页：重章节按子节切，出建议张数 + 页骨架）
+scripts/preflight.py      CLI：文字级预检（数量词 vs 实际条数）
 scripts/capacity.py       CLI：DOM 槽尺寸与起手字号（\--budget\）
 scripts/review_sheet.py   CLI：复核用 720px 缩略图 + 2×2 拼版图（一次看 4 张）
 scripts/validate.py       CLI：规格门（结构硬违规 + 几何硬墙 + 提示）

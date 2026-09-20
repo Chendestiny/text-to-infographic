@@ -11,7 +11,7 @@ The model writes copy inside a declared character budget; fonts, spacing, stroke
 decided by code:
 
 ```
-article.md ──> [LLM] spec.json ──> validate ──> build ──> measure (real browser) ──> PNG × N
+article.md ──> run.py --plan ──> [LLM] spec.json ──> run.py (four gates + render) ──> PNG × N
 ```
 
 ---
@@ -64,10 +64,13 @@ Everything else lives in [SKILL.md](SKILL.md), and the agent does it on its own:
 |---|---|
 | Clones, probes the environment, runs `doctor`, fixes what is missing | install script |
 | Five steps: read → write spec → **pass the spec gate** → run the pipeline → deliver | SKILL.md steps 1–5 |
-| Derives the page count from the formula (cover + sections, thin sections paired up) | SKILL.md step 2 |
-| Both gates must pass; `needs_llm` means shortening copy and re-running, never skipping | SKILL.md steps 4–5 |
-| **Looks at every card**: broken words, orphan lines, truncation, overlap, mismatched counts | SKILL.md step 6 |
-| Reports the gate output **verbatim** + page-count reasoning + self-check result + leftovers | SKILL.md step 6 |
+| Gets the page count by **running `run.py --plan`**, not by deriving it | SKILL.md step 2 + `scripts/run.py --plan` |
+| Gets slot sizes by **running `run.py --budget`** (wrapping and shrinking are the browser's job), not by memorising budgets | `scripts/run.py --budget` |
+| All four gates must pass; `needs_llm` means shortening copy and re-running, never skipping | SKILL.md steps 4–5 |
+| **Reviews the contact sheet** (720px thumbnails, 4 per sheet) for broken words, orphan lines, overlap, mismatched counts | `scripts/review_sheet.py` |
+| Prints a per-card health table plus the specific problems (`dom-overflow` / `dom-orphan` / box or line crossings), naming each card | `scripts/pipeline.py` |
+| Uses **rect intersection** for overlap checks instead of a vision model; vision is only a final aesthetic spot-check | `scripts/measure.py` |
+| Reports the gate output **verbatim** + page-count reasoning + degradation report + self-check result | SKILL.md step 6 |
 
 Output is `card-01.png …`, 2160×2880 by default (3:4 @2x; `render.py --scale 1` gives 1080×1440).
 
@@ -76,8 +79,8 @@ Output is `card-01.png …`, 2160×2880 by default (3:4 @2x; `render.py --scale 
 ```bash
 git clone https://github.com/Chendestiny/text-to-infographic
 cd text-to-infographic
-python scripts/validate.py spec/my-deck.json                    # spec gate: per-slot character budgets
-python scripts/pipeline.py spec/my-deck.json -o out/my-deck     # build -> measure -> render
+python scripts/run.py examples/json/agent-roadmap.json --out out/demo           # four gates + render
+python scripts/run.py examples/json/agent-roadmap.json --budget --no-render     # slot budgets only
 ```
 
 - The only dependencies are Python 3.8+ and any Chromium browser (auto-detected); the font is bundled; `.json` specs need zero third-party packages
@@ -104,26 +107,23 @@ order and the carousel is done; nothing needs retouching.
 
 ## 📐 How many cards
 
-**Recommended range: 6–9 cards** (Xiaohongshu's own spec allows 1–18 and recommends 6–9). The count
-comes from how you *cut* the article, **not from its length**: cards ≈ 1 (cover) + sections, pairing
-two sections per card when a section averages under 400 characters, and compressing to 4–5 cards
-below 1.5k characters. A 228-line article becomes 7 cards; a 1000-line one becomes 8–10.
+**Recommended range: 4–9 cards (cover included)** — 6–9 is what Xiaohongshu prefers, short posts at
+4–5 are fine, and the platform hard limit is 18. The rule and the per-size table are defined in
+**exactly one place**: [SKILL.md](SKILL.md) step 2 (three competing versions used to make the model
+second-guess itself). When you actually need the number, **run the script instead of deriving it**:
 
-| article size | cards (cover included) | how it is carried |
-|---|---|---|
-| ≤1.5k chars / 1–2 sections | 4–5 | one point per card |
-| 1.5k–3k / 2–3 sections | 5–6 | one section per card |
-| 3k–6k / 4–6 sections | 6–8 | 1–2 sections per card; merge the pitfalls into one `bullets` card |
-| 6k–10k / 6–10 sections | 8–12 | one theme per card (`meta.max_cards` declares the budget) |
-| >10k / 10+ sections | **split into a series**, 6–8 cards each | never cram 18 cards into one post |
+```bash
+python scripts/run.py --plan <article.md>   # chars / sections → suggested count + range + per-card skeleton
+```
 
-Density is carried by the layouts (one `bullets` card holds 4–6 rows, one `chain` walks 5–6 steps,
-one `compare` is a 4+4 table) — that is what keeps the count down. `validate.py` reports in tiers:
-over budget is a soft notice, over the platform limit of 18 is a hard violation.
+**Budgets work the same way**: the character counts in the contract are only *writing advice* — whether
+copy actually fits is decided by a **real browser**. `python scripts/run.py <spec.json> --budget` prints
+each slot's size and starting font size. When rendering, `pipeline.py` also prints a per-card health
+table and names `dom-overflow` / `dom-orphan` / box or line crossings / overlap.
 
 ---
 
-## 🧭 How it stays correct: two gates, three checks
+## 🧭 How it stays correct: four gates
 
 Every layout declares a **character budget for every text slot** in
 [templates/contracts.yaml](templates/contracts.yaml), measured from renders that actually look good —
@@ -131,10 +131,13 @@ not guessed. Copy is written *inside* that budget instead of hoping it fits.
 
 | gate | what it is | catches |
 |---|---|---|
-| **spec gate** `validate.py` | pure string math, milliseconds, zero tokens | copy over budget, reported by exact path: `card-03(chain).steps[1].text  17.5 > max 15` |
-| **pixel gate** `measure.py` | renders in a real browser and reads **actual text bounding boxes** via `getBBox()` | real width overflow, text past the canvas, text spilling out of its box, HTML rows breaking the card bottom |
-| **content gate** (inside the pixel gate) | every string the spec registered must actually appear in the render | text that is neither overflowing nor clipped but simply **never drawn**, plus tails the engine replaced with an ellipsis |
+| **preflight** `preflight.py` | pure string math, milliseconds, zero tokens | quantity words that disagree with the number of items the spec actually lists ("3 things" but five rows) |
+| **spec gate** `validate.py` | renders once without a browser to compute geometry, milliseconds, zero tokens | structural problems (unknown fields / a `note` that never renders / item counts out of range / page count past the hard limit) + the **geometry wall**; over-budget copy is only a notice |
+| **pixel gate** `measure.py` | renders in a real browser and measures every **DOM text slot** and box rectangle | `dom-overflow` (genuinely does not fit), text past the canvas, text spilling out of its box, overlapping text |
+| **content gate** (inside the pixel gate) | every string the spec registered must actually appear in the render | text that is neither overflowing nor clipped but simply **never drawn**, plus tails replaced with an ellipsis |
 
+All four run inside a single command that ends with a verdict:
+`python scripts/run.py <spec.json> --article <article.md> --out <dir>`.
 Misfit copy is escalated as a `needs_llm` list, so the model gets a precise error instead of "it looks
 broken". Content and layout problems skip the retry loop (scripts cannot fix them) and come back
 naming the exact sentence. Full detail: [docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md).
@@ -206,10 +209,15 @@ filled by default — write `fill: none` to leave one blank on purpose.
 
 ```
 SKILL.md                  agent-facing entry point (workflow, contract, copy discipline)
+scripts/run.py            the single entry point: --plan / --budget / deliver (four gates + render + report)
 scripts/ink.py            rendering core: hand-drawn primitives + 13 layouts + page assembly
 scripts/decor.py          decoration parts (gears / stars, pure SVG)
 scripts/build.py          CLI: spec → HTML
-scripts/validate.py       CLI: character contracts (spec gate) + page-count range notice
+scripts/plan.py           CLI: page planning (two-level cut; suggested count + per-card skeleton)
+scripts/preflight.py      CLI: text preflight (quantity words vs actual item counts)
+scripts/capacity.py       CLI: DOM slot sizes and starting font sizes (--budget)
+scripts/review_sheet.py   CLI: 720px review thumbnails + a 2×2 contact sheet (4 cards at a glance)
+scripts/validate.py       CLI: spec gate (structural violations + geometry wall + notices)
 scripts/render.py         CLI: HTML → PNG (browser detection)
 scripts/measure.py        real-browser text measurement (pixel + content gates)
 scripts/pipeline.py       build → measure → fix loop → render, up to 3 rounds
