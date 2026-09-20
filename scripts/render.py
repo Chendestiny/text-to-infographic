@@ -105,7 +105,11 @@ def _shoot_cli(browser, html_path, png_path, width, height, scale, timeout=120):
     prof = tempfile.mkdtemp(prefix="t2i-prof-")
     cmd = [
         browser,
+        # ★ --no-sandbox 必须有：容器 / CI 里以 root 跑时，没有它 Chrome 直接拒绝启动。
+        #   CDP 后端早就有这条，CLI 兜底漏了 —— 于是"主后端挂了自动降级"在容器里
+        #   等于没降级（兜底也起不来）。两边参数要对齐。
         "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+        "--no-sandbox", "--disable-dev-shm-usage",
         "--allow-file-access-from-files",
         "--disable-http-cache", "--disk-cache-size=1",      # 坑 2：别让 profile 缓存住页面
         "--user-data-dir=%s" % os.path.abspath(prof),
