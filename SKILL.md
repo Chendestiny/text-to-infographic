@@ -13,7 +13,7 @@ version: 1.0.0
 > 一篇长文 → 一套直接能发的小红书图文。你**只出规格、不碰像素**：字号 / 留白 / 描边 / 配色
 > 全由 `scripts/ink.py` 决定，所以同一份规格永远出同一套图，每一页都能手改。
 
-**全部工具面就是 `run.py` 一条命令，三种用法**（先看这张表，细节按需查）：
+**全部工具面就是 `run.py` 一条命令，四种用法**（先看这张表，细节按需查）：
 
 **别分头跑**（实测：分头跑 validate/pipeline/preflight/capacity 会让一轮多出
 20+ 次调用，全花在"自己拼输出"上）：
@@ -23,10 +23,32 @@ version: 1.0.0
 | ① 决定拆几页（**只跑一次**） | `python scripts/run.py --plan <文章.md>` → 页数 + 区间 + 每页骨架 + 可直接粘贴的 `meta.plan` |
 | ② 写规格阶段 | `python scripts/run.py <spec.json> --budget --no-render` → 每槽字数预算 + 预检 + 规格门 |
 | ③ 交付 | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` → 预检 + 页数对账 + 规格门 + 像素门/几何门 + 出图 + 复核缩略图 + **一句结论** |
+| ④ **单页返工** | `python scripts/run.py <spec.json> --only 5 --out <出图目录>` → 只重建第 5 页，**1~2 秒**，其余页原样不动 |
 
 **四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 + 几何布局门 / 内容门）。
 **不要在 run.py 之外单独跑 plan.py / validate.py / pipeline.py / preflight.py** —— 它们的结果
 全都已经并在 run.py 的结论里，重复跑只是多烧时间。
+
+### 卡壳与失败怎么兜（别自己写 try，也别死等）
+
+- **每道门都有超时**：超时会明说 `✗ pipeline.py 超时（600s，已强制中止）` 并退出，
+  **不会挂死**。做法是先重跑同一条命令；反复超时再查环境（`python scripts/doctor.py`）。
+- **像素门崩溃/超时会自动重试 1 次** —— 浏览器冷启动慢、profile 被占这类抖动占大多数。
+- **渲染失败不再被吞**：哪张没出图会点名（`✗ 以下页没有出图：card-03`），退出码非零。
+  **其余已出好的图会保留** —— 不会因一张失败把整套删掉。
+- 慢机器上放宽：`T2I_TIMEOUT_SCALE=2 python scripts/run.py ...`（所有超时按比例放大）。
+
+### ④ 单页返工（人在回路）
+
+用户说「第 5 张不行，重做」时：**只改规格里 card-05 那一段**，然后
+
+```bash
+python scripts/run.py <spec.json> --only 5 --out <出图目录>
+```
+
+只重建 + 重测 + 重出第 5 页，**1~2 秒**，其余页的 HTML 与 PNG 一字不动。
+**不要**为一张图重跑整套 —— 既慢（整套 ~15s vs 单页 ~1s），
+又可能让其它页因为 calib 微调而长得和原来不完全一样。
 
 ---
 
@@ -35,6 +57,10 @@ version: 1.0.0
 **第 1 步 · 环境**：`python scripts/doctor.py`
 （Windows 上 `python` 不在 PATH 就用 `py -3`）。doctor 提示"只有 CDP 后端可用"时先设
 `$env:T2I_BACKEND='cdp'`，否则截图会全是 0 字节。
+
+> ⚠ **顺手确认 `python -c "import yaml"` 不报错**。规格门要拿 pyyaml 解析契约本体
+> `templates/contracts.yaml`，**与规格是不是 `.json` 无关**。缺了它规格门会直接跑不起来
+> （现在会被判成硬问题并说清楚，不要再当成"有提示"跳过）。缺就 `pip install pyyaml`。
 
 **第 2 步 · 切页：跑脚本，别自己推**
 ```bash
@@ -172,6 +198,8 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 - [ ] ③ 规格门：**0 硬违规**（结构 + 几何墙）
 - [ ] ④ 像素门：0 溢出、无 `crosses-*` / `overlap`，降级报告无遗漏
 - [ ] 结论段是「✓ 硬问题 0 处」；若有 `needs_llm`，只可能是 `dom-overflow` 或结构问题
+- [ ] **每一页都真的有图**：`card-01..N.png` 一个不少（run.py 会独立数一遍文件，
+      不信任上游报告）。缺哪张就改规格里那一段后 `--only N` 单独返工
 - [ ] 交付时给了门禁逐字输出 + 页数理由 + 降级报告 + 自检结论
 - [ ] 产物：`card-01..N.png`，默认 2160×2880（3:4 的 2 倍图）。
       要调风格改 `assets/style.md` 里的常量，**不要**改单页 HTML —— 一页一改风格就飘了
