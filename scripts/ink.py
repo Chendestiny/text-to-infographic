@@ -457,7 +457,11 @@ def wrap_text(s, size, maxw):
 
 def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
               line_h=None, max_lines=None, tag="", align="center"):
-    """居中多行文本。超出 max_lines 时最后一行补省略号，绝不让字号缩到看不清。"""
+    """多行文本槽：登记折行前的原文 + 行数上限，折行与缩放交给浏览器。
+
+    旧 SVG 实现的「多档缩小字号 + 超限补省略号」已随 DOM 迁移删除：
+    max_lines 现在是槽的 clamp，真的放不下由浏览器 autofit 缩字号兜住。
+    """
     if not s:
         return ""
     maxw = maxw or W_INNER
@@ -465,43 +469,14 @@ def txt_block(cx, y, s, size=SIZES["note"], maxw=None, fill=C_NOTE,
     # 引擎把尾巴截成「…」时两边都是半句话，门永远发现不了截断
     # （实测踩过：timeline 节点说明「…个簇，只扫最近的簇」被吃掉后半句，门报干净）。
     _reg_text(s)
-    if True:      # DOM 文字模式：整块登记成一个槽（旧 SVG 实现已删）
-        # 高度 = 行数 × 行高，宽度 = maxw
-        _n = max_lines or 1
-        _h = _n * size * 1.26
-        _x0 = cx if align == "start" else cx - maxw / 2.0
-        _reg_slot(_x0, y - _h / 2.0, maxw, _h, s, size, clamp=_n,
-                  align="start" if align == "start" else "center",
-                  min_size=max(12, int(size * 0.55)))
-        return ""
-    _reg_cap(tag, s, size, maxw, max_lines or 1)
-    lines = wrap_text(s, size, maxw)
-    if max_lines and len(lines) > max_lines:
-        # ★ 多档缩小：小一号不行就再小，直到塞进原定行数 —— **绝不轻易截断**。
-        #   为什么要有这个循环：截断 = 丢字 = 必须让 LLM 改文案重跑（实测平均 4 轮）。
-        #   而"字小一点"只是观感问题，会在降级报告里点名，不该换来一轮 LLM。
-        # 档位加深到 0.42：实测 2 行的槽在 0.42 时容量约翻倍，正常文案不可能再截断。
-        # 用户的判断是对的 —— 这是前端/引擎的活，不该把"缩字号"丢回 LLM 改文案。
-        for tier in (0.85, 0.78, 0.72, 0.66, 0.60, 0.54, 0.48, 0.42):
-            dsize = int(size * tier)
-            dlines = wrap_text(s, dsize, maxw)
-            if len(dlines) <= max_lines:
-                WARN.append("[%s] 密集档 ×%.2f（%dpx，原 %dpx）：折行超限、缩小后塞得下｜%s"
-                            % (tag, tier, dsize, size, strip_hl(s)[:34]))
-                size, lines = dsize, dlines
-                break
-    if max_lines and len(lines) > max_lines:
-        n_all = len(lines)
-        lines = lines[:max_lines]
-        lines[-1] = lines[-1][:-1] + "…"
-        WARN.append("[%s] 文案被截断：折行后 %d 行、上限 %d 行，尾巴成了「…」｜%s"
-                    % (tag, n_all, max_lines, strip_hl(s)[:34]))
-    line_h = line_h or size * 1.34
-    out = []
-    y0 = y - (len(lines) - 1) * line_h * 0.5
-    for i, ln in enumerate(lines):
-        out.append(txt(cx, y0 + i * line_h, ln, size, fill=fill, tag=tag, cap=False,
-                       anchor="start" if align == "start" else "middle"))
+    # DOM 文字模式：整块登记成一个槽（旧 SVG 实现已删）
+    # 高度 = 行数 × 行高，宽度 = maxw
+    _n = max_lines or 1
+    _h = _n * size * 1.26
+    _x0 = cx if align == "start" else cx - maxw / 2.0
+    _reg_slot(_x0, y - _h / 2.0, maxw, _h, s, size, clamp=_n,
+              align="start" if align == "start" else "center",
+              min_size=max(12, int(size * 0.55)))
     return ""
 # ---------------------------------------------------------------- 高亮语法
 # 规格里的文字支持 [[关键词]] 或 [[关键词|b]] 表示加蜡笔底色，b=blue y=yellow p=pink g=gray
@@ -573,61 +548,27 @@ def _reg_text(s):
 
 def hl_line(cx, y, parts, size=SIZES["body"], seed=1, pad=8, align="center",
             maxw=None, tag=""):
-    """一行居中文本，可给任意片段涂蜡笔底色。
+    """一行文本槽，可给任意片段涂蜡笔底色。
 
-    ★ 必须「先画完所有色带、再统一画所有文字」——逐段交替输出时，
-      后一段的色带会盖住前一段的文字。
-
-    ★ 文字**必须是一条 <text>**：拆成多条时，每段的 x 要靠 tw() 估算手动推进，
-      估算漂移会让相邻段真的压在一起 —— 几何布局门实测抓到
-      'MCP' 与 ' 的解法' 重叠 791 px²。色带照旧按估算画（蜡笔笔触本来就有 ±9px
-      抖动，漂移看不出来），但文字位置漂移一眼就能看见。
+    ★ 整行必须登记成**一个**槽，不能按片段拆成多个槽：拆开时每段的 x 要靠 tw()
+      估算手动推进，估算漂移会让相邻段真的压在一起（旧 SVG 侧实测抓到
+      'MCP' 与 ' 的解法' 重叠 791 px²）。整行交给浏览器排，这种漂移就不可能发生。
+      蜡笔底色由 DOM 侧 .hl 的 ::before 画，所以这里只登记槽、不画色带。
     """
-    if True:      # DOM 文字模式：重建高亮标记并登记单槽（旧 SVG 实现已删）
-        # parse_hl 已经把 [[…]] 拆成 (文本, 颜色)，这里**重建**成 [[文本|字母]]，
-        # 交给 DOM 侧的 _inline 画成 .hl 蜡笔底色（视觉与 SVG 侧一致）。
-        _pieces = []
-        for _t, _c in parts:
-            _pieces.append("[[%s|%s]]" % (_t, _hl_key(_c)) if _c else _t)
-        _plain = "".join(_pieces)
-        _tw_est = sum(tw(t, size) for t, _ in parts) * 1.06
-        _w = maxw or (_tw_est + 12)
-        _x0 = cx - _w / 2.0 if align == "center" else cx
-        _reg_slot(_x0, y - size * 0.63, _w, size * 1.26, _plain, size, clamp=1,
-                  align="center" if align == "center" else "start",
-                  min_size=max(12, int(size * 0.55)))
-        _reg_text(_plain)
-        return ""
-    _reg_cap(tag, "".join(t for t, _ in parts), size, maxw, 1)
-    total = sum(tw(t, size) for t, _ in parts) * 1.06   # 实际渲染宽估计
-    if maxw and total > maxw:
-        dense = int(size * DENSE)
-        dtotal = sum(tw(t, dense) for t, _ in parts) * 1.06
-        if dtotal <= maxw:
-            WARN.append("[%s] 密集档 %dpx（原 %dpx）：标准放不下、小一号放得下｜%s"
-                        % (tag, dense, size, "".join(t for t, _ in parts)[:34]))
-            size = dense
-            total = dtotal
-        else:
-            size = max(20, int(size * maxw / total))
-            total = sum(tw(t, size) for t, _ in parts) * 1.06
-    x = cx - total / 2.0 if align == "center" else cx
-    bands = []
-    for i, (t, col) in enumerate(parts):
-        w = tw(t, size)
-        if col:
-            # tw() 对拉丁偏低、对中文准确 → 按拉丁占比轻微补偿，不做整体放大
-            latin = sum(1 for c in t if ord(c) <= 0x2E80)
-            f = 1.0 + 0.08 * (latin / float(max(1, len(t))))
-            bands.append(crayon(x + w / 2.0, y - size * 0.26, w * f + pad * 2,
-                                size * 1.02, seed + i * 17, col))
-        x += w
-    # 文字只画一条：整行交给浏览器排，不再按估算逐段推进。
-    # ★ align 的取值是给布局代码看的（center/left/right），**不能直接当 text-anchor 用**：
-    #   SVG 只认 start/middle/end，"center" 是非法值 → 浏览器静默回退成 start，
-    #   文字会从中心一路往右跑（实测越界 493px，几何门报 out-of-canvas）。
-    plain = "".join(t for t, _ in parts)
-    anc = {"center": "middle", "left": "start", "right": "end"}.get(align, align)
+    # DOM 文字模式：重建高亮标记并登记单槽（旧 SVG 实现已删）
+    # parse_hl 已经把 [[…]] 拆成 (文本, 颜色)，这里**重建**成 [[文本|字母]]，
+    # 交给 DOM 侧的 _inline 画成 .hl 蜡笔底色（视觉与 SVG 侧一致）。
+    _pieces = []
+    for _t, _c in parts:
+        _pieces.append("[[%s|%s]]" % (_t, _hl_key(_c)) if _c else _t)
+    _plain = "".join(_pieces)
+    _tw_est = sum(tw(t, size) for t, _ in parts) * 1.06
+    _w = maxw or (_tw_est + 12)
+    _x0 = cx - _w / 2.0 if align == "center" else cx
+    _reg_slot(_x0, y - size * 0.63, _w, size * 1.26, _plain, size, clamp=1,
+              align="center" if align == "center" else "start",
+              min_size=max(12, int(size * 0.55)))
+    _reg_text(_plain)
     return ""
 # ---------------------------------------------------------------- 版式
 def h1_html(title):
