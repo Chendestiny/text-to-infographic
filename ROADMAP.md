@@ -160,8 +160,12 @@ python tests/run.py                                             # 自测：14 �
 **它是防"轮次悄悄变多"的** —— 一轮返工 ≈ 一次 LLM 往返（50~90s），
 而脚本只要 6s，所以"退化成多跑几轮"是这个项目最贵的失效模式，
 在测试里抓住它比在真机上便宜得多 |
-| 4b | 补 `tests/` 里还没覆盖的：12 处已知反例（孤字、压框、劈词、超长）的**版式级**用例；
-另外把 `tests/run.py` 挂进 CI（现在**没有 workflow**，只能本地跑） | CI 上每条 PR 自动跑 |
+| 4b | ✅ **已做**：① 版式烟雾测试（13 种版式每种都出图）② 不支持的字段会被点名
+  ③ **CI**（`945d795`，`.github/workflows/ci.yml`，ubuntu + windows 跑 `tests/run.py`）
+  —— 顺带修了 `render.py` CLI 兜底缺 `--no-sandbox`（容器里以 root 跑时两条路都起不来，
+  "自动降级"等于没降级） |
+| 4c | 剩下的反例用例：压框、劈词、孤字、超长这些**版式级**的确定性构造
+  （现在只有孤字/超长是端到端的，压框与劈词还没造出来） | `tests/run.py` 全绿 |
 | 5 | ~~**Gitee 镜像同步**~~ **已基本达成**：实测镜像只落后 1 个提交（缺 `ROADMAP.md` 与 `docs/testing.md`，即 `cf037a3` 新增的两个文件）；`install.ps1` 与 `scripts/ink.py` 已与 GitHub 逐字节一致 | 推一次 `cf037a3` 后 `ROADMAP.md` 不再是 404 |
 | 6 | 复核 `docs/troubleshooting.md` 里"标题自动缩字号"那段（`h1_html` 仍会缩 ✓ 属正常） | 读一遍确认无过期描述 |
 
