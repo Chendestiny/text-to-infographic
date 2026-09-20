@@ -195,7 +195,82 @@ class TestPlanAndBudget(Base):
                          "--budget 不许报假绿：\n%s" % o[-800:])
 
 
-# ─────────────────────────────── 5. 可靠性兜底
+# ─────────────────────────────── 5. 版式烟雾测试
+# 守：13 种版式每一种都能出图。写成**一张包含全部版式的规格**跑一次，
+#     而不是 13 次单独跑（各自 ~5s，合起来太慢）。
+#     坏处是失败时只说"这套没出全"，好处是便宜 —— 而这套测试的核心目的就是便宜。
+LAYOUT_CARDS = {
+    "cover": {"layout": "cover", "title": "T", "subtitle": "S",
+              "quads": [{"label": "L", "mini": "steps",
+                         "items": [{"text": "A"}, {"text": "B"}, {"text": "C"}]}]},
+    "hub": {"layout": "hub", "title": "T", "hub": "H",
+            "items": [{"big": "A", "en": "a"}, {"big": "B", "en": "b"}]},
+    "chain": {"layout": "chain", "title": "T",
+              "steps": [{"text": "第一步"}, {"text": "第二步"}, {"text": "第三步"}]},
+    "cycle": {"layout": "cycle", "title": "T", "keywords": ["A", "B", "C"],
+              "nodes": [{"text": "N1"}, {"text": "N2"}, {"text": "N3"}]},
+    "spectrum": {"layout": "spectrum", "title": "T", "stages": ["一", "二"],
+                 "ends": ["左", "右"],
+                 "items": [{"text": "第一条"}, {"text": "第二条"}, {"text": "第三条"}]},
+    "timeline": {"layout": "timeline", "title": "T",
+                 "steps": [{"text": "S1", "desc": "d"}, {"text": "S2", "desc": "d"},
+                           {"text": "S3", "desc": "d"}]},
+    "flow": {"layout": "flow", "title": "T",
+             "nodes": [{"text": "N1", "desc": "d"}, {"text": "N2", "desc": "d"},
+                       {"text": "N3", "desc": "d"}]},
+    "bullets": {"layout": "bullets", "title": "T",
+                "items": [{"head": "H1", "desc": "d"}, {"head": "H2", "desc": "d"}]},
+    "compare": {"layout": "compare", "title": "T",
+                "left": {"label": "L", "blocks": ["A", "B"]},
+                "right": {"label": "R", "blocks": ["C", "D"]}},
+    "matrix": {"layout": "matrix", "title": "T",
+               "cells": [{"head": "C1", "desc": "d"}, {"head": "C2", "desc": "d"},
+                         {"head": "C3", "desc": "d"}, {"head": "C4", "desc": "d"}]},
+    "pyramid": {"layout": "pyramid", "title": "T",
+                "levels": [{"text": "顶层"}, {"text": "中层"}, {"text": "基座"}]},
+    "arch": {"layout": "arch", "title": "T", "host_label": "H",
+             "inner": [{"text": "I1", "desc": "d"}], "server": "S",
+             "chips": [{"text": "C1"}, {"text": "C2"}]},
+    "raw": {"layout": "raw",
+            "svg": "<svg class='stage' width='824' height='600' "
+                   "xmlns='http://www.w3.org/2000/svg'><rect x='20' y='20' "
+                   "width='300' height='120' rx='12' fill='#F2C94C' "
+                   "stroke='#2B2B2B' stroke-width='5'/></svg>"},
+}
+
+
+class TestLayoutSmoke(Base):
+    def test_every_layout_renders(self):
+        names = list(LAYOUT_CARDS)
+        spec = {"meta": {}, "cards": [LAYOUT_CARDS[n] for n in names]}
+        p = self.path("layouts.json")
+        dump(spec, p)
+        out = self.path("layouts")
+        rc, o, _ = run_script("pipeline.py", p, "-o", out, timeout=300)
+        self.assertEqual(rc, 0, "版式烟雾测试失败：\n%s" % o[-2000:])
+        missing = [n for i, n in enumerate(names, 1)
+                   if not os.path.exists(os.path.join(out, "card-%02d.png" % i))
+                   or os.path.getsize(os.path.join(out, "card-%02d.png" % i)) < 1024]
+        self.assertEqual(missing, [], "这些版式没出图：%s" % missing)
+
+    def test_unsupported_field_is_reported(self):
+        """守：写了不渲染的字段要被点名（原来会静默消失）。
+
+        layouts.md：note 只在 arch/chain/cover/flow/hub/matrix/pyramid/spectrum/
+        timeline 上渲染，bullets / compare / cycle / raw 写了不渲染。
+        """
+        spec = {"meta": {}, "cards": [
+            {"layout": "bullets", "title": "T", "note": "这里不会被渲染",
+             "items": [{"head": "H", "desc": "d"}]}]}
+        p = self.path("badfield.json")
+        dump(spec, p)
+        rc, o, _ = run_script("validate.py", p, timeout=120)
+        self.assertIn("契约校验", o, "规格门没跑完：\n%s" % o[-800:])
+        self.assertTrue(("字段提示" in o) or ("note" in o),
+                        "写了不渲染的字段应该被点名：\n%s" % o[-800:])
+
+
+# ─────────────────────────────── 6. 可靠性兜底底
 class TestReliability(Base):
     """守：不挂死、不静默失败、不连累好图、单页返工不乱动。"""
 
