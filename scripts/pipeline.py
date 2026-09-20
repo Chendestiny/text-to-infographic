@@ -335,9 +335,17 @@ if __name__ == "__main__":
     st = run(args.spec, args.out, frame=args.frame, no_decor=args.no_decor,
              only=args.only)
     print("\n耗时 %.1fs" % st["seconds"])
-    # ★ 渲染失败必须让退出码非零：原来无条件 exit(0)，于是没出图也算"成功"
+    # ★ 退出码必须反映"这份稿能不能交付"，不能只反映"我有没有崩"。
+    #   原来只有渲染失败才非零；**有硬问题（needs_llm）时照样 exit=0** ——
+    #   于是 `python scripts/pipeline.py ...` 单独跑一遍，明明报了
+    #   "以下文案需要 LLM 重写"，退出码还是成功（tests/run.py 抓到的）。
+    #   run.py 靠扫输出关键词兜住了，但那是巧合，不是契约。
     if st.get("render_failed"):
         print("✗ 渲染失败：%s（重试 1 次仍失败，可单独返工：--only N）"
               % " ".join(st["render_failed"]))
+        sys.exit(1)
+    if st.get("needs_llm"):
+        print("✗ 有 %d 处文案放不下，必须改短（见上面的逐条与像素值）"
+              % len(st["needs_llm"]))
         sys.exit(1)
     sys.exit(0)
