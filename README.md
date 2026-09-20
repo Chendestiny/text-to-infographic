@@ -204,7 +204,7 @@ scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装
 scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
 scripts/build.py          CLI：规格 → HTML
 scripts/plan.py           CLI：页数规划（两级切页：重章节按子节切，出建议张数 + 页骨架）
-scripts/capacity.py       CLI：几何容量（每槽 ok / dense / overflow）
+scripts/capacity.py       CLI：DOM 槽尺寸与起手字号（\--budget\）
 scripts/review_sheet.py   CLI：复核用 720px 缩略图 + 2×2 拼版图（一次看 4 张）
 scripts/validate.py       CLI：规格门（结构硬违规 + 几何硬墙 + 提示）
 scripts/render.py         CLI：HTML → PNG（浏览器探测）

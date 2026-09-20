@@ -81,7 +81,7 @@ python scripts/validate.py spec/<名字>.json
 改文案之前先看它到底是哪一种：
 
 ```bash
-python scripts/capacity.py spec/xxx.json     # 逐槽：ok / dense / overflow + 原因
+python scripts/run.py spec/xxx.json --budget  # 逐槽：槽尺寸 + 起手字号
 python scripts/validate.py spec/xxx.json     # 规格门：硬违规 + 各类提示
 python scripts/pipeline.py spec/xxx.json -o out/   # 出图时还有"降级报告"逐卡点名
 ```
