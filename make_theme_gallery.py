@@ -39,6 +39,8 @@ BUILD = os.path.join(HERE, "theme-build")
 CROSS = [0, 2, 5]          # cover_title / chain / bullets 在 SAMPLES 里的下标
 # 单皮肤横条（README「出图效果」用）：封面 / 步骤链 / 左右对照 / 四象限
 STRIP = [0, 2, 3, 6]
+# README 头部横幅：同皮肤但换另外四种版式，避免和上面那条横条重复同一批图
+BANNER = [1, 4, 5, 7]      # cover / flow / bullets / pyramid
 
 # ── 样张内容：8 张，覆盖封面 / 结构 / 对照 / 清单 / 图表五大类 ────────────────
 # ★ 整套样张讲**同一件事**（Agent 工程），封面和正文才对得上。
@@ -155,6 +157,10 @@ def main():
     ap.add_argument("--strips-out", default="",
                     help="额外给**每套皮肤**出一条 4 图横条（README 的「出图效果」用）")
     ap.add_argument("--strip-thumb", type=int, default=380, help="横条单格宽度（默认 380）")
+    ap.add_argument("--banner-out", default="",
+                    help="额外出一张**头部横幅**（只出 --banner-theme 那一套，用另外四种版式）")
+    ap.add_argument("--banner-theme", default="crayon", help="横幅用哪套皮肤（默认 crayon）")
+    ap.add_argument("--banner-thumb", type=int, default=420, help="横幅单格宽度（默认 420）")
     ap.add_argument("--scale", type=int, default=1, help="出图倍率，1=1080×1440（默认）")
     ap.add_argument("--list", action="store_true", help="只列出主题")
     a = ap.parse_args()
@@ -221,6 +227,16 @@ def main():
                 cols=len(idx), thumb_w=a.strip_thumb,
                 title="%s · %s" % (T["label"], key), note=T["desc"],
                 labels=["%s · %s" % (SAMPLES[i][1], SAMPLES[i][2]) for i in idx])
+        if a.banner_out and pngs and key == a.banner_theme:
+            # README 头部那张横幅：用**另外四种版式**，免得和下面那条横条一模一样
+            bo = pngs and os.path.abspath(a.banner_out)
+            os.makedirs(os.path.dirname(bo), exist_ok=True)
+            idx = [i for i in BANNER if i < len(pngs)]
+            sheet.contact_sheet(
+                [pngs[i] for i in idx], bo, cols=len(idx), thumb_w=a.banner_thumb,
+                title="%s · %s" % (T["label"], key), note=T["desc"],
+                labels=["%s · %s" % (SAMPLES[i][1], SAMPLES[i][2]) for i in idx])
+            print("\n横幅：%s" % bo)
 
     # 总览：每套皮肤的封面并排，一眼看完全部候选
     if covers:

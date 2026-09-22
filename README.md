@@ -1,3 +1,5 @@
+<div align="center">
+
 # text-to-infographic
 
 *7 套皮肤，把长文变成能直接发的小红书 / Instagram 图文 —— 文字永远清晰（不像 AI 生图那样糊字），同一份规格永远出同一套图，每页都能手改。*
@@ -10,9 +12,11 @@
 [![skins: 7](https://img.shields.io/badge/skins-7-purple.svg)](assets/style.md)
 [![python: ≥3.8](https://img.shields.io/badge/python-%E2%89%A53.8-blue.svg)](pyproject.toml)
 
-![一套 8 页的成品，暗夜终端皮肤，四页并排](docs/images/showcase/02-terminal.png)
+![蜡笔纸感皮肤，四页并排](docs/images/showcase/00-crayon-banner.png)
 
 [快速开始](#快速开始) · [出图效果](#出图效果) · [版式与皮肤](#版式与皮肤) · [规格语法](#规格语法) · [页数与四道门](#页数与四道门) · [许可](#许可)
+
+</div>
 
 ---
 

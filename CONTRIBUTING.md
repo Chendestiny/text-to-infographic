@@ -82,9 +82,14 @@ python tests/run.py                            # TestTheme 那几条会盯住"�
 ```bash
 python make_layout_gallery.py                                  # → docs/images/layouts/版式图鉴.png
 python make_theme_gallery.py --strips-out docs/images/showcase  # → README「出图效果」那 7 条横条
+python make_theme_gallery.py --themes crayon -o <临时目录> \
+       --banner-out docs/images/showcase/00-crayon-banner.png   # → README 头部横幅
 python make_theme_gallery.py --family paper -o <桌面目录>        # 逐套皮肤翻样张（挑皮肤时用）
 python make_style_probe.py --layout chain --styles A,G          # 方框样式比选 → 桌面 t2i-box-styles/
 ```
+
+> README 头部横幅用**另外四种版式**（`BANNER`），和下面那条横条（`STRIP`）不重复同一批图 ——
+> 同一张图在页面里出现两次很显廉价。
 
 > README 只用拼版和横条，**一行一张的图片表格不要**（手机上撑成瀑布，每个 `<img>` 都是一次请求）。
 > 跨皮肤对比表（`--sheet-out`）有 872 KB，按需生成、不进仓库 —— 皮肤长什么样看横条已经够了。

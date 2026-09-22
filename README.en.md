@@ -1,3 +1,5 @@
+<div align="center">
+
 # text-to-infographic
 
 *Seven skins that turn a long article into a ready-to-publish Xiaohongshu / Instagram carousel — text stays crisp (image generation garbles CJK), the same spec always renders the same deck, and every page stays hand-editable.*
@@ -10,9 +12,11 @@
 [![skins: 7](https://img.shields.io/badge/skins-7-purple.svg)](assets/style.md)
 [![python: ≥3.8](https://img.shields.io/badge/python-%E2%89%A53.8-blue.svg)](pyproject.toml)
 
-![One 8-page deck, Terminal skin, four pages side by side](docs/images/showcase/02-terminal.png)
+![Crayon Paper skin, four pages side by side](docs/images/showcase/00-crayon-banner.png)
 
 [Quick start](#quick-start) · [What comes out](#what-comes-out) · [Layouts and skins](#layouts-and-skins) · [Spec syntax](#spec-syntax) · [Page count and gates](#page-count-and-gates) · [License](#license)
+
+</div>
 
 ---
 
