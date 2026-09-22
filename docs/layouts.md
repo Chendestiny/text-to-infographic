@@ -1,6 +1,10 @@
-# 版式参考（13 种）
+# 版式参考（15 种）
 
 每个版式的**全部可用字段**、字数预算、以及什么时候该用。
+
+> **皮肤和版式是两件事**：版式决定"哪里放什么"，皮肤（`meta.theme`）决定"长什么样"。
+> 15 个版式 × 每套皮肤任意组合，**版式字段一个都不用改**。皮肤清单与挑选方式见
+> [style.md](../assets/style.md#主题皮肤) 与 `python make_theme_gallery.py --family paper`。
 
 **文字排版**：每种版式的文字都是 DOM（浏览器折行 + 垂直居中 + 自动缩字号），引擎只给「容器的矩形」。所以下面的字数预算只是**写作建议**，真放不下时**浏览器会缩字号**（autofit，缩到槽内），缩到下限仍放不下才在报告里点名。
 
@@ -15,15 +19,18 @@
 
 | 字段 | 支持 | 写了不渲染（规格门报违规） |
 |---|---|---|
-| `note` | arch / chain / cover / flow / hub / matrix / pyramid / spectrum / timeline | **bullets / compare / cycle / raw** |
+| `note` | arch / chain / cover / **cover_title** / **cover_quote** / flow / hub / matrix / pyramid / spectrum / timeline | **bullets / compare / cycle / raw** |
 | `note2`、`mid` | 仅 `flow` | 其余全部 |
 | `dashed` + `dashed_label` | `chain` / `flow` | 其余全部 |
 | `gradient`（两端色） | 仅 `spectrum` | 其余全部 |
+| `kicker` | **cover_title** / **cover_quote** | 其余全部 |
+| `accent`、`quote`、`source` | **cover_title**（`accent`）/ **cover_quote**（`quote` / `source`） | 其余全部 |
 
 > 别按文档猜字段能不能渲染——文档可能落后于代码。最快的验证：
 > `grep 'card.get("字段名")' scripts/ink.py`；有命中才是真的渲染。
 
-样张见 [../docs/images/layouts/](images/layouts/)。
+样张一张看全：[images/layouts/版式图鉴.png](images/layouts/版式图鉴.png)
+（`python make_layout_gallery.py` 重新生成 —— 它同时是"每个版式都能渲染"的回归证据）。
 
 ---
 
@@ -80,6 +87,52 @@
     "items": [{"text": "固定流程"}, {"text": "部分决策"}, {"text": "自主任务"}],
     "line": "越往右越需要 Agent"}]}
 ```
+
+## cover_title — 大字标题封面（纯文字）
+
+**一句话占满整页。** 参照的是小红书最常见的那种封面：**左对齐、一行一个词组、
+其中一行下面压一条粗色条**。和 `cover`（四宫格）是两个方向 —— 四宫格是"目录"，
+这个是"标题"。
+
+它**不走页头**（标题由版式自己画），所以字号上限比普通页的 `h1` 更大（124px）。
+
+| 字段 | 类型 | 预算 | 说明 |
+|---|---|---|---|
+| `title` | str | 4–26（最多 4 行） | 主标题，**必须用 `\n` 手动断行** |
+| `accent` | int | 1–2 | 第几行压色条（1 起），默认 2；只有一行时默认 1 |
+| `kicker` | str | ≤10 | 左上角小标签（用主题强调色） |
+| `subtitle` | str | ≤16 | 标题下方的支撑句（一行，左对齐） |
+| `note` | str | ≤30（软） | 最底部小字 |
+
+> ⚠ **不要靠自动折行**。封面最忌词组被切散 —— 想要哪里断就写 `\n`。
+> 字号按"最长一行必须放得下"反解，写 4 行时会自动缩到最长那行刚好排满。
+
+```json
+{"layout": "cover_title",
+ "title": "Qoder和Zcode\n二选一\n哪个更适合大肥鱼\nv4.1flash",
+ "kicker": "AI 编程工具", "subtitle": "两条路线实测对比", "note": "看完就知道选谁"}
+```
+
+## cover_quote — 金句封面（结论先行）
+
+把整篇最锋利的那句话单独占一页。和 `cover_title` 的区别是**居中**排版，
+上下各一条短色条把它框成一块。
+
+| 字段 | 类型 | 预算 | 说明 |
+|---|---|---|---|
+| `quote` | str | 6–44 | 金句正文，可写 `[[关键词]]`；整句**最多排 4 行**（自动折行） |
+| `title` | str | ≤44 | `quote` 的别名（二选一，先读 `quote`） |
+| `source` | str | ≤16 | 出处 / 作者，自动加破折号 |
+| `kicker` | str | ≤10 | 左上角小标签 |
+| `note` | str | ≤30（软） | 最底部小字 |
+
+```json
+{"layout": "cover_quote",
+ "quote": "窗口是工作台，不是仓库", "source": "长任务那一章的结论",
+ "kicker": "一句话记住"}
+```
+
+> `quote` 是**一个槽**，折行完全交给浏览器 —— 手工折行会在不同字号下断错地方。
 
 ## hub — 中心圆 + 并列概念框
 

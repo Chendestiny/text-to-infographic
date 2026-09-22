@@ -9,7 +9,8 @@
 |---|---|
 | 页数与容量怎么算 | `scripts/plan.py`（页数）· `scripts/capacity.py`（几何容量）—— 先跑脚本，再回来读文档 |
 | [architecture.md](architecture.md) | 为什么是"LLM 填表 + 脚本渲染"？四道门（+ 门内的内容门）各自管什么？校准闭环怎么转？ |
-| [layouts.md](layouts.md) | 13 种版式每个字段叫什么、能放多少字、什么时候该用哪个 |
+| [layouts.md](layouts.md) | 15 种版式每个字段叫什么、能放多少字、什么时候该用哪个；三种封面的取舍 |
+| [../assets/style.md](../assets/style.md) | **主题（皮肤）令牌**、两个族的区别、怎么挑皮肤、配色/笔锋/装饰零件库的设计纪律 |
 | [contracts.md](contracts.md) | 字数契约怎么读、硬约束和软约束的区别、违规了怎么改 |
 | [rendering.md](rendering.md) | 渲染后端（CDP / CLI）、profile 冲突这个坑、`T2I_BACKEND` 怎么用 |
 | [troubleshooting.md](troubleshooting.md) | 症状 → 原因 → 处置，全部是实测过的失败模式 |
@@ -22,6 +23,7 @@
 | 截图全失败 / 0 字节 | [rendering.md](rendering.md) → 先跑 `doctor.py` 看后端预检 |
 | 页面底部被裁、字压框 | [troubleshooting.md](troubleshooting.md) → 溢出三兄弟 |
 | 不知道某个版式有哪些字段 | [layouts.md](layouts.md) |
+| 想换个视觉风格 / 觉得图太素 | [../assets/style.md](../assets/style.md) → `python make_theme_gallery.py` |
 | `validate.py` 报一堆路径违规 | [contracts.md](contracts.md) |
 | 模型能不能看图 / 该不该做视觉检查 | [troubleshooting.md](troubleshooting.md) → 读图能力三态 |
 | 想加一种自己的版式 | [extending.md](extending.md) |

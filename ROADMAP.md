@@ -15,10 +15,13 @@
 | 手绘墨迹（方框/箭头/色带/装饰） | SVG 路径，由 `scripts/ink.py` 生成 |
 | **文字** | **DOM**：版式只登记"槽"（矩形 + 起手字号 + 行数上限），**折行 / 行数上限 / 垂直居中 / 字号自适应全部交给浏览器** |
 | 字号自适应 | 页面尾部注入 ~15 行 JS：与**槽盒子**比 `scrollHeight/clientHeight`，缩到放下为止 |
-| 高亮 `[[词]]` | `_inline()` → `<span class="hl y">`，用现成的 `.hl::before` 蜡笔底色（与 SVG 时代视觉一致） |
+| 高亮 `[[词]]` | `_inline()` → `<span class="hl y">`，用现成的 `.hl::before` 底色（形态由皮肤决定） |
+| **皮肤** | `scripts/theme.py` 一组设计令牌，`meta.theme` 切换；分**纸张族**（复用版式，已定稿）与**工程族**（节点重画过，版式待定） |
 
-**13 个版式全部已 DOM 化**（`arch / bullets / chain / compare / cover / cycle / flow / hub / matrix / pyramid / raw / spectrum / timeline`），
+**15 个版式全部已 DOM 化**（`arch / bullets / chain / compare / cover / cover_quote /
+cover_title / cycle / flow / hub / matrix / pyramid / raw / spectrum / timeline`），
 验收证据：逐版式检查"stage 里 `<text>` 元素 = 0"（`bullets` 本就是 HTML 行、`raw` 是透传）。
+版式烟雾测试已覆盖全部 15 种。
 
 ## 二、工具面（agent 只需要记这些）
 
@@ -27,7 +30,9 @@ python scripts/run.py --plan <文章.md>                          # 页数 + 区
 python scripts/run.py <spec.json> --budget --no-render          # 每槽尺寸/起手字号 + 预检 + 规格门
 python scripts/run.py <spec.json> --article <文章.md> --out 目录 # 交付：四道门 + 出图 + 缩略图 + 结论 + 交付报告
 python scripts/run.py <spec.json> --only N --out 目录            # 单页返工：1~2 秒，其余页不动
-python tests/run.py                                             # 自测：14 条，约 75 秒
+python tests/run.py                                             # 自测：27 条，约 60 秒
+python make_layout_gallery.py                                   # 版式图鉴：14 张样张拼成一张
+python make_theme_gallery.py --family paper                     # 皮肤图鉴：纸张族 3 套 × 8 张样张（出到桌面）
 ```
 
 `run.py` 自己调这些（**不要分头跑**，实测那样会让一轮多出 20+ 次命令调用）：
@@ -64,6 +69,8 @@ python tests/run.py                                             # 自测：14 �
 | 文档全面更新（删过期机制） | `d3ffd3c`、`da9f816`、`598f09a`、`f2f9570` | 过期关键词复扫 0 处；相对链接全部有效 |
 | 删 `txt_block` / `hl_line` 的不可达 SVG 尾巴（含拆掉 `if True:` 包裹层） | `f0d7a2f` | `ink.py` 1717 → 1658 行；顶层定义 94 → 94 **一条不少**；5 份示例 pipeline exit=0 |
 | 文档补课：四道门口径、`run.py --plan` 入口、迁移状态 13/13 | `8495296` | `architecture.md` / `SKILL.md` / `README.md` / `README.en.md` / `docs/README.md` 与 ROADMAP 对齐；过期口径复扫 0 处；107 个相对链接全部有效 |
+| **主题（皮肤）系统 + 两种标题封面 + 工程族节点重画** | 本轮 | 7 套皮肤分两族；`make_theme_gallery.py` / `make_layout_gallery.py` / `make_style_probe.py` 三张图鉴；`--theme` 开关；32 条测试全绿；10 份示例 exit=0 |
+| **文章4 多皮肤实测**（`4 提示词工程.md` 3424 汉字 → 8 张） | 本轮 | 随机 3 套皮肤 `retro` / `crayon` / `blueprint`：**exit=0、0 处溢出、逐页四门全过、5.8~6.0s 墙钟**（pipeline 3.8~3.9s），8 张 × 2.3~2.8 MB |
 | 本地实测（文章4 / 文章5，不走 hermes）揪出 5 个真 bug + 2 处样式问题 | `0e76d4d`、`3af40ed`、`277747d`、`976eca7`、`3c37db6`、`d664f63`、`5ac1880` | 见下方《文章4 / 文章5 本地实测》；10 份示例（5 json + 5 yaml）仍 exit=0 |
 
 **速度**：三轮均值 **198.7s**（SVG 基线 377s，**-47%**），最快 139.6s；**180s 目标在 2/3 轮达成**。
@@ -160,14 +167,31 @@ python tests/run.py                                             # 自测：14 �
 **它是防"轮次悄悄变多"的** —— 一轮返工 ≈ 一次 LLM 往返（50~90s），
 而脚本只要 6s，所以"退化成多跑几轮"是这个项目最贵的失效模式，
 在测试里抓住它比在真机上便宜得多 |
-| 4b | ✅ **已做**：① 版式烟雾测试（13 种版式每种都出图）② 不支持的字段会被点名
+| 4b | ✅ **已做**：① 版式烟雾测试（**15 种**版式每种都出图）② 不支持的字段会被点名
   ③ **CI**（`945d795`，`.github/workflows/ci.yml`，ubuntu + windows 跑 `tests/run.py`）
   —— 顺带修了 `render.py` CLI 兜底缺 `--no-sandbox`（容器里以 root 跑时两条路都起不来，
   "自动降级"等于没降级） |
-| 4c | 剩下的反例用例：压框、劈词、孤字、超长这些**版式级**的确定性构造
-  （现在只有孤字/超长是端到端的，压框与劈词还没造出来） | `tests/run.py` 全绿 |
+| 4c | ✅ **已做**：压框 / 压线用**合成测量报告**直接喂 `measure.analyze()`
+  （不启浏览器 → 确定性且只要 0.01s）；劈词改为守住那条 CSS
+  （DOM 侧靠 `overflow-wrap: break-word` + `word-break: normal` 保证不切词内，
+  **不是门检出来的**，所以改坏了门不会响，只能靠这条断言）
+  ❗ 仍缺：压框/压线的**端到端真实渲染**反例（合成数据无法证明真实渲染也对） |
+| 5 | ✅ **已做**：分发配套（`CHANGELOG.md` / `CONTRIBUTING.md` / `SECURITY.md` /
+  `pyproject.toml` / `.claude-plugin/plugin.json`），两份 README 已补
+  「开发与自测」段并链到新文件 | — |
 | 5 | ~~**Gitee 镜像同步**~~ **已基本达成**：实测镜像只落后 1 个提交（缺 `ROADMAP.md` 与 `docs/testing.md`，即 `cf037a3` 新增的两个文件）；`install.ps1` 与 `scripts/ink.py` 已与 GitHub 逐字节一致 | 推一次 `cf037a3` 后 `ROADMAP.md` 不再是 404 |
 | 6 | 复核 `docs/troubleshooting.md` 里"标题自动缩字号"那段（`h1_html` 仍会缩 ✓ 属正常） | 读一遍确认无过期描述 |
+| 7 | 🟡 **进行中**：**主题（皮肤）系统** —— 分两个族（`theme.family`）：
+  **纸张族**（`crayon` / `grid` / `retro`）复用现有版式；
+  **工程族**（`terminal` / `blueprint` / `mono` / `nord`）节点按用户口径重画：
+  透明底 + 主题色细描边 + 无笔锋；终端/蓝图用四角刻度，素白/北欧只用细线（北欧线宽 4.8）。
+  已做：删 `morandi` / `brutal`、两张拼版图鉴（`scripts/sheet.py`）、两种新封面版式、
+  **`--theme` 命令行开关**（`run.py` / `pipeline.py`）、`make_style_probe.py` 方框比选、32 条测试。
+  **文章4 实测**（`4 提示词工程.md`，3424 汉字 → 8 张）：随机 3 套皮肤
+  `retro` / `crayon` / `blueprint` 全部 **exit=0、0 处溢出、5.8~6.0s 墙钟**（pipeline 3.8~3.9s）。
+  **剩下的**：① 工程族的版式本身（现在只是把纸张版式换了个节点画法）
+  ② 皮肤级字体分发 ③ 端到端的真实渲染反例（压框/压线还是合成数据） |
+  **第 1、2 类都能交付；正式图鉴只放了第 1 类** |
 
 ## 六、文档索引
 
@@ -178,7 +202,8 @@ python tests/run.py                                             # 自测：14 �
 | [docs/testing.md](docs/testing.md) | **怎么实测耗时与质量**（hermes 多轮流程、脚本、坑） |
 | [docs/architecture.md](docs/architecture.md) | 为什么是"DOM 文字 + SVG 墨迹"、四道门的分工、迁移状态 |
 | [docs/contracts.md](docs/contracts.md) | 契约语义（结构=硬、字数=建议、DOM 槽实测=硬） |
-| [docs/layouts.md](docs/layouts.md) | 13 个版式的字段与写作建议 |
+| [docs/layouts.md](docs/layouts.md) | 15 个版式的字段与写作建议 |
+| [assets/style.md](assets/style.md) | **主题（皮肤）令牌**、配色、笔锋、装饰零件库 |
 | [docs/extending.md](docs/extending.md) | 加新版式：只画墨迹 + `_reg_slot` 接口 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 报错处置（`dom-overflow` / `dom-orphan` / 页面被裁…） |
 | [docs/rendering.md](docs/rendering.md) | 渲染后端、@1x/@2x、看图成本实测 |

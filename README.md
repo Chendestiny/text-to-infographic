@@ -1,6 +1,6 @@
 # text-to-infographic
 
-> **把长文变成一套直接能发的小红书 / Instagram 图文** —— 封面 + 每页一个要点，3:4 竖版手绘卡片风。
+> **把长文变成一套直接能发的小红书 / Instagram 图文** —— 封面 + 每页一个要点，3:4 竖版，7 套皮肤可选。
 > 你只管把文章交给它，像素全部由脚本决定。
 
 [English](README.en.md) · [SKILL.md](SKILL.md) · [docs/](docs/)
@@ -76,8 +76,12 @@
 ```bash
 git clone https://github.com/Chendestiny/text-to-infographic
 cd text-to-infographic
+python -c "import yaml" || pip install pyyaml                                     # 硬依赖
 python scripts/run.py examples/json/agent-roadmap.json --out out/demo            # 四道门 + 出图
 python scripts/run.py examples/json/agent-roadmap.json --budget --no-render      # 只看每槽字数预算
+python scripts/run.py examples/json/agent-roadmap.json --only 3 --out out/demo   # 单页返工（1~2 秒）
+python scripts/run.py examples/json/agent-roadmap.json --theme blueprint --out out/demo   # 换皮肤
+python tests/run.py                                                              # 自测（改代码前/后跑）
 ```
 
 - 依赖只有 Python 3.8+、`pyyaml` 和任意 Chromium 浏览器（自动探测），字体已内置；
@@ -88,147 +92,120 @@ python scripts/run.py examples/json/agent-roadmap.json --budget --no-render     
 
 ## 🖼 出图效果
 
-一份长文进去，**9 张图**出来 —— 2160×2880（3:4 的 2 倍图），直接能发。挑 6 张，一行两张
-（这套是真实跑批的产物，不是设计稿）：
+同一份内容（8 页），**7 套皮肤**各挑 4 页并排 —— 全部由脚本渲染，不是设计稿：
 
-|  |  |
-|---|---|
-|![四宫格封面](docs/images/showcase/01-cover.png)|![左右对照](docs/images/showcase/02-compare.png)|
-|![横向链路](docs/images/showcase/03-flow.png)|![环形循环](docs/images/showcase/04-cycle.png)|
-|![竖向步骤链](docs/images/showcase/05-chain.png)|![光谱决策](docs/images/showcase/06-spectrum.png)|
+![蜡笔纸感 · crayon](docs/images/showcase/01-crayon.png)
 
-第一张是**汇总封面**：2×2 四宫格，每格一个微缩版式——等于把目录画出来。之后每页一个要点。
-按 `card-01 … card-09` 顺序发出去就是一套完整轮播，不需要再修图。
+![暗夜终端 · terminal](docs/images/showcase/02-terminal.png)
 
----
+![工程蓝图 · blueprint](docs/images/showcase/03-blueprint.png)
 
-## 📐 页数：区间与密度
+![方格稿纸 · grid](docs/images/showcase/04-grid.png)
 
-**区间 4~9 张（含封面）** —— 6~9 是小红书配图的平台偏好区，短帖 4~5 张也正常，平台上限 18 张。
-规则与分规模对照表**只在 [SKILL.md](SKILL.md) 第 2 步定义一次**（曾经三处口径打架，模型为此纠结）。
-真要算的时候**跑脚本，别自己推**：
+![素白细线 · mono](docs/images/showcase/05-mono.png)
 
-```bash
-python scripts/run.py --plan <文章.md>      # 汉字数 / 节数 → 建议张数 + 区间 + 每页骨架
-```
+![复古报刊 · retro](docs/images/showcase/06-retro.png)
 
-**容量同理**：契约里的字数只是**写作建议**，真实放不放得下由**浏览器实测**说话 ——
-`python scripts/run.py <spec.json> --budget` 逐槽给出槽尺寸与起手字号。
-出图时 `pipeline.py` 还会逐卡打一份**逐页体检表**，并点名 `dom-overflow` / `dom-orphan` / 压框线 / 重叠。
+![北欧冷调 · nord](docs/images/showcase/07-nord.png)
 
 ---
 
-## 🧭 怎么保证不出丑：四道门
+## 🧩 版式 15 种 · 皮肤 7 套
 
-每种版式的**每个文字槽位**都在 [templates/contracts.yaml](templates/contracts.yaml)
-里声明了字数预算，数值来自实际渲染好看的真实文案——不是拍脑袋。文案是在预算内写出来的，
-不是写完再祈祷能放下。
+**这是两件事**：版式决定「哪里放什么」，皮肤决定「长什么样」。15 × 7 随便组合，
+**版式字段一个都不用改**。
 
-| 门 | 是什么 | 抓什么 |
+![版式图鉴](docs/images/layouts/版式图鉴.png)
+
+`cover` 四宫格封面 · `cover_title` 大字标题封面 · `cover_quote` 金句封面 · `hub` 中心圆 ·
+`chain` 步骤链 · `cycle` 环形循环 · `spectrum` 光谱决策 · `timeline` 时间轴 ·
+`flow` 横向链路 · `bullets` 清单 · `compare` 左右对照 · `matrix` 四象限 ·
+`pyramid` 金字塔 · `arch` 结构图 · `raw` 内联 SVG 逃生舱
+
+![皮肤图鉴](docs/images/themes/皮肤图鉴.png)
+
+| `meta.theme` | 族 | 长什么样 |
 |---|---|---|
-| **预检** `preflight.py` | 纯字符串计算，毫秒级，零 token | 数量词与规格里实际的条数对不上（写「3 个」却排了 5 条） |
-| **规格门** `validate.py` | 无浏览器渲染一遍算几何，毫秒级，零 token | 结构问题（未知字段 / `note` 不渲染 / 条数越界 / 页数超硬上限）+ **几何硬墙**；字数超预算只提示，报精确路径 |
-| **像素门** `measure.py` | 真实浏览器渲染，量每个 **DOM 文字槽**与方框的矩形 | `dom-overflow` 真放不下、画到画布外、压出方框、文字互相压住 |
-| **内容门**（像素门里） | 规格里登记过的每段文字都必须真的出现在图上 | 「既不溢出也不压框、但字根本没画出来」的**静默吞字**，以及被截成「…」的断尾 |
+| `crayon` | 纸张 | 米黄纸底 + 暖灰手绘笔锋 + 蜡笔色带。**默认** |
+| `grid` | 纸张 | 浅米底 + 淡蓝方格 + 蓝黑墨水 |
+| `retro` | 纸张 | 米黄报纸底 + 深褐墨水 + 粗下划线 |
+| `terminal` | 工程 | 深藏蓝底 + 荧光绿细线 + 网格，等宽字 |
+| `blueprint` | 工程 | 深蓝底 + 冷白细线 + 双层坐标网格 |
+| `mono` | 工程 | 白底 + 黑细线，留白最狠 |
+| `nord` | 工程 | 深灰蓝底 + 极地色系（霜蓝/极光绿/紫） |
 
-四道门全并在一条命令里，跑完直接给结论：
-`python scripts/run.py <spec.json> --article <文章.md> --out <目录>`。
-放不下的文案会进 `needs_llm` 清单，让模型拿到精确报错而不是「看起来坏了」；
-内容类问题不会再空跑几轮校准（脚本修不了），一轮就点名到具体哪一句。
-细节：[docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md)。
+**两个族的画法不同**：纸张族靠「上色方框」区分节点；工程族靠「透明底 + 主题色细描边 +
+四角刻度」，不做高饱和填充。字段、字数、四道门口径完全一致。
+细节：[docs/layouts.md](docs/layouts.md)（版式字段）· [assets/style.md](assets/style.md)（皮肤令牌）。
 
----
-
-## 🧩 版式（13 种）
-
-| 版式 | 形态 | 适合 |
-|---|---|---|
-| `cover` | **汇总封面**：标题 + 2×2 四宫格，每格一个微缩版式 | 封面 |
-| `hub` | 标题 + 中心圆 + 概念框 | 讲并列概念 |
-| `chain` | 竖排方框 + 箭头 | 步骤、循环 |
-| `cycle` | 节点围成环 + 弧形箭头 | ReAct / PDCA |
-| `spectrum` | 渐变箭头 + 两端标签 + 列表 | 「什么时候用 A 还是 B」 |
-| `timeline` | 居中竖轴、左右交替 | 阶段、演进 |
-| `flow` | 横排节点（可带底部一排） | 链路、数据流 |
-| `bullets` | • 列表行自适应填满 | 坑、清单 |
-| `compare` | 左右两列、内层块自适应 | 反例 vs 正解 |
-| `matrix` | 2×2 四象限 | 按规模/维度选型 |
-| `pyramid` | 梯形分层 | 能力层级、优先级分层 |
-| `arch` | 嵌套框 + 箭头 + 底部一排 | 角色、架构 |
-| `raw` | 内联 SVG 逃生舱 | 以上都表达不了时 |
-
-<details>
-<summary><b>12 张版式实渲染样张</b>（raw 不单独出样张，点开看）</summary>
-
-|  |  |
-|---|---|
-|![cover](docs/images/layouts/方案-01-cover-四宫格封面.png)|![hub](docs/images/layouts/方案-02-hub-中心圆.png)|
-|![chain](docs/images/layouts/方案-03-chain-步骤链.png)|![cycle](docs/images/layouts/方案-04-cycle-环形循环.png)|
-|![spectrum](docs/images/layouts/方案-05-spectrum-光谱决策.png)|![timeline](docs/images/layouts/方案-06-timeline-时间轴.png)|
-|![flow](docs/images/layouts/方案-07-flow-横向链路.png)|![compare](docs/images/layouts/方案-08-compare-左右对照.png)|
-|![bullets](docs/images/layouts/方案-09-bullets-清单.png)|![matrix](docs/images/layouts/方案-10-matrix-四象限.png)|
-|![pyramid](docs/images/layouts/方案-11-pyramid-金字塔.png)|![arch](docs/images/layouts/方案-12-arch-结构图.png)|
-
-</details>
+挑皮肤 / 调节点画法：`python make_theme_gallery.py --family paper`（→ 桌面）、
+`python make_style_probe.py`（列 = 皮肤，行 = 方框方案）。
 
 ---
 
-## ✍️ 文案语法
+## ✍️ 规格语法
 
-`[[关键词]]` 给文字加马克笔底色（颜色自动轮换：蓝 → 黄 → 粉 → 绿 → 灰 → 橙）；
-`[[关键词|b]]` 指定颜色。方框同样能用 `fill`，而且默认全部上色——
-想让某个框留白表达「这步不重要」才写 `fill: none`。
+`[[关键词]]` 加马克笔底色（颜色按皮肤轮换），`[[词|b]]` 指定色
+（`b` 蓝 / `y` 黄 / `p` 粉 / `gr` 绿 / `g` 灰 / `o` 橙）。
+方框默认上色，想让某框留白表达「这步不重要」写 `"fill": "none"`。
 
 ```yaml
-- layout: chain
-  title: Function Calling
-  subtitle: "[[tool_call]] 是模型吐的，干活的是代码"
-  steps:
-    - {text: "① 注入 [[tools 定义]]"}
-    - {text: "③ 模型返回 tool_calls", fill: yellow}
-  note: "回到 ② 步，直到模型不再调工具"
+meta: { theme: crayon, footer: "" }
+cards:
+  - layout: chain
+    title: Function Calling
+    subtitle: "[[tool_call]] 是模型吐的，干活的是代码"
+    steps:
+      - {text: "① 注入 [[tools 定义]]"}
+      - {text: "③ 模型返回 tool_calls", fill: yellow}
+    note: "回到 ② 步，直到模型不再调工具"
 ```
 
 ---
 
-## 📦 依赖
+## 🛡 页数与四道门
 
-| 依赖 | 必需？ | 说明 |
-|---|---|---|
-| Python 3.8+ | 必需 | 核心脚本只用标准库 |
-| pyyaml | **必需** | 规格门要拿它解析契约本体 `templates/contracts.yaml`；**写 `.json` 规格也省不掉**（缺了规格门会静默跳过） |
-| Chromium 浏览器 | 渲染必需 | Chrome / Edge / Chromium，自动探测（CDP 或 CLI 后端） |
-| 多模态模型 | 可选 | 正确性校验是纯文本度量；视觉只多一步审美终检 |
+页数**跑脚本拿答案**，不自己推公式；**容量也是实测说话**，不靠背字数上限：
 
-## 📁 仓库结构
-
+```bash
+python scripts/run.py --plan <文章.md>     # 汉字数/节数 → 建议张数 + 区间 + 每页骨架
+python scripts/run.py <spec> --budget      # 每槽尺寸与起手字号（写文案前看）
 ```
-SKILL.md                  面向 Agent 的入口（工作流 + 契约 + 文案纪律）
-scripts/run.py            唯一入口：--plan 规划 / --budget 看预算 / 交付（四道门 + 出图 + 报告）
-scripts/ink.py            渲染核心：手绘原语 + 13 种版式 + 页面装配
-scripts/decor.py          装饰图元（齿轮 / 星形，纯 SVG）
-scripts/build.py          CLI：规格 → HTML
-scripts/plan.py           CLI：页数规划（两级切页：重章节按子节切，出建议张数 + 页骨架）
-scripts/preflight.py      CLI：文字级预检（数量词 vs 实际条数）
-scripts/capacity.py       CLI：DOM 槽尺寸与起手字号（\--budget\）
-scripts/review_sheet.py   CLI：复核用 720px 缩略图 + 2×2 拼版图（一次看 4 张）
-scripts/validate.py       CLI：规格门（结构硬违规 + 几何硬墙 + 提示）
-scripts/render.py         CLI：HTML → PNG（浏览器探测）
-scripts/measure.py        真实浏览器文本测量（像素门 + 内容门）
-scripts/pipeline.py       build → measure → 修正循环 → render，最多 3 轮
-scripts/doctor.py         环境自检
-scripts/vision_probe.py   一次性判定当前模型能不能真的读图
-templates/contracts.yaml  每种版式的字数预算（契约）
-examples/                 5 份完整规格（.json 与 .yaml 各一套）
-docs/                     手册：版式、契约、渲染、排障、扩展
-docs/images/showcase/     本 README 里那套真实跑批
-install.ps1 / install.sh  一句话安装脚本（clone + 环境检查 + doctor），交给 Agent 执行
+
+| 门 | 抓什么 |
+|---|---|
+| 预检 | 数量词与规格里实际的条数对不上 |
+| 规格门 | 未知字段 / 条数越界 / 页数超硬上限（字数超预算只提示，报精确路径） |
+| 像素门 | 真实浏览器实测：放不下、画出画布、压框压线、两段文字互相压住 |
+| 内容门 | **静默吞字** —— 规格里登记过的字根本没画出来、或被截成「…」 |
+
+四道门全在一条命令里，跑完直接给结论（页数落在 4~9，6~9 是平台偏好区）：
+
+```bash
+python scripts/run.py <spec.json> --article <文章.md> --out <目录>   # 交付
+python scripts/run.py <spec.json> --only 3 --out <目录>              # 单页返工（1~2 秒）
 ```
+
+---
+
+## 📦 装上就能跑
+
+Python 3.8+ · `pyyaml`（规格门要读契约本体，写 `.json` 也省不掉）· 任意 Chromium 浏览器（自动探测）。
+字体已内置，不需要联网，不需要多模态模型（正确性是纯文本度量）。
+
+```bash
+python scripts/doctor.py    # 环境自检
+python tests/run.py         # 自测 32 条，约 80 秒
+```
+
+入口与手册：`SKILL.md`（Agent 手册）· `scripts/run.py`（唯一入口）· `scripts/ink.py`（渲染核心）·
+`scripts/theme.py`（皮肤令牌）· `templates/contracts.yaml`（字数契约）· `examples/`（5 份完整规格）·
+`docs/` · `tests/`。改代码先看 [CONTRIBUTING.md](CONTRIBUTING.md)，改了什么看 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
 ## 📄 许可
 
-代码 MIT。内置字体（站酷快乐体 / ZCOOL KuaiLe）使用
-[SIL Open Font License 1.1](assets/fonts/OFL.txt)，与 MIT 的分界见 [LICENSE](LICENSE)——
-它也是仓库里唯一的第三方资源。
+代码 MIT。内置字体（站酷快乐体）使用 [SIL OFL 1.1](assets/fonts/OFL.txt)，
+与 MIT 的分界见 [LICENSE](LICENSE) —— 它也是仓库里唯一的第三方资源。
+使用边界见 [SECURITY.md](SECURITY.md)。

@@ -1,0 +1,52 @@
+# 这个包**不是**用来 import 的。
+#
+# 本项目是 Agent 技能 + 一组独立脚本：交付形态是一个被克隆到
+# ~/.agents/skills/ 的目录，用法是 `python scripts/run.py ...`。
+# 声明成 Python 包的唯一目的，是让 `pip install .` 能一次性装好**硬依赖 pyyaml**
+# —— 规格门要拿它解析契约本体 templates/contracts.yaml，
+#   与规格写成 .json 还是 .yaml 无关（README 里已写明）。
+#
+# 若你想"装完就能敲命令"，用安装脚本而不是 pip：
+#   install.sh / install.ps1   （会把技能目录放到 ~/.agents/skills/）
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "text-to-infographic"
+version = "0.1.0"
+description = "Turn long articles into ready-to-publish carousel cards: a cover plus one page per key point, deterministic rendering, no AI image generation."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = [
+  "xiaohongshu",
+  "infographic",
+  "carousel",
+  "article-to-image",
+  "agent-skill",
+  "claude-code-skill",
+  "codex-skill",
+  "deterministic-rendering",
+  "chinese-typography",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Text Processing :: Markup :: HTML",
+]
+dependencies = [
+  "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Chendestiny/text-to-infographic"
+Repository = "https://github.com/Chendestiny/text-to-infographic"
+Changelog = "https://github.com/Chendestiny/text-to-infographic/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+# 没有可 import 的模块，scripts/ 下都是独立脚本
+packages = []

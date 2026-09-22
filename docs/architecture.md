@@ -98,8 +98,9 @@
 | 文件 | 职责 |
 |---|---|
 | `scripts/run.py` | **唯一入口**：三种用法（`--plan` / `--budget --no-render` / 交付），四道门与交付报告都并在这一次调用里 |
-| `scripts/ink.py` | 渲染核心：手绘原语、13 种版式、页面装配、`CALIB` |
-| `scripts/decor.py` | 装饰零件（齿轮/星形，纯 SVG path）+ 颜色轮换 |
+| `scripts/ink.py` | 渲染核心：手绘原语、15 种版式、页面装配、`CALIB`；**皮肤在此生效**（`use_theme`） |
+| `scripts/theme.py` | **主题（皮肤）注册表**：设计令牌 + 两个族（纸张 / 工程）。加皮肤只改这个文件 |
+| `scripts/decor.py` | 装饰零件（齿轮/星/云朵/像素加号/十字准星/取景框角，纯 SVG path）；描边色与抖动由 `set_style()` 注入 |
 | `scripts/build.py` | CLI：规格 → HTML（支持 yaml / json） |
 | `scripts/plan.py` | CLI：页数规划（建议张数 + 每页骨架，把「推导」变成「答案」） |
 | `scripts/preflight.py` | CLI：文字级预检（数量词 vs 实际条数），零成本、不起浏览器 |

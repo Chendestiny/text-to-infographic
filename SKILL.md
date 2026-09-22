@@ -24,6 +24,7 @@ version: 1.0.0
 | ② 写规格阶段 | `python scripts/run.py <spec.json> --budget --no-render` → 每槽字数预算 + 预检 + 规格门 |
 | ③ 交付 | `python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>` → 预检 + 页数对账 + 规格门 + 像素门/几何门 + 出图 + 复核缩略图 + **一句结论** |
 | ④ **单页返工** | `python scripts/run.py <spec.json> --only 5 --out <出图目录>` → 只重建第 5 页，**1~2 秒**，其余页原样不动 |
+| ⑤ 换皮肤 | 加 `--theme <key>`（3~5 都能用）；不写就用规格里的 `meta.theme`，再没有就是 `crayon` |
 
 **四道门全在 `run.py` 里**（文字预检 / 规格门 / 像素门 + 几何布局门 / 内容门）。
 **不要在 run.py 之外单独跑 plan.py / validate.py / pipeline.py / preflight.py** —— 它们的结果
@@ -139,7 +140,8 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
 ## 三、规格语法
 
 ```json
-{ "meta": { "footer": "", "frame": ["pen", "card", "none"], "decor": true,
+{ "meta": { "theme": "crayon", "footer": "", "frame": ["pen", "card", "none"],
+            "decor": true,
             "plan": { "suggest": 4, "range": [4, 5],
                       "note": "偏离理由（一致就不用写）：骨架 card-03 装不下第二章 15 个组件" } },
   "cards": [
@@ -154,12 +156,24 @@ python scripts/run.py <spec.json> --article <文章.md> --out <出图目录>
   ] }
 ```
 
-- `meta.frame` 每页轮换：`pen` 手绘框 / `card` 圆角卡 / `none` 无框；`meta.decor` 控制装饰
+- **`meta.theme`（或 `--theme`）换皮肤**（默认 `crayon` 蜡笔纸感）。皮肤分**两个族**：
+  - **纸张族**（复用现有版式）：`crayon` 蜡笔纸感 / `grid` 方格稿纸 / `retro` 复古报刊
+  - **工程族**（节点画法不同；版式仍在调整，但已可交付）：
+    `terminal` 暗夜终端 / `blueprint` 工程蓝图 / `mono` 素白细线 / `nord` 北欧冷调
+
+  **版式字段、字数、四道门口径完全一样**，只换皮。不确定选哪套就先跑
+  `python make_theme_gallery.py --family paper`（出图到桌面 `t2i-themes/`，加 `--family diagram` 看工程族）。
+  名字写错会当场报错，**不会静默回落**。
+- `meta.frame` 每页轮换：`pen` 手绘框 / `card` 圆角卡 / `none` 无框（不给就跟皮肤走）；
+  `meta.decor` 控制装饰
 - 标题里写 `\n` 可显式断行；单卡可覆盖 `frame`；chain / flow 支持 `dashed` + `dashed_label`
-- **高亮**：`[[关键词]]` 自动轮换色（蓝→黄→粉→绿→灰→橙），`[[x|b]]` 指定色
-  （`b` 蓝 / `y` 黄 / `p` 粉 / `g` 灰 / `gr` 绿 / `o` 橙）
+- **高亮**：`[[关键词]]` 自动轮换色，`[[x|b]]` 指定色
+  （`b` 蓝 / `y` 黄 / `p` 粉 / `g` 灰 / `gr` 绿 / `o` 橙）。
+  轮换起点与顺序由皮肤给，所以同一段文案在不同皮肤下的高亮配色不同
 - **上色**：方框默认全部上色、颜色自动轮换；想让某框留白表示"这步不重要"写 `"fill": "none"`；
-  框已上色时框内文字不再画色带（引擎行为，不用处理）
+  框已上色时框内文字不再画色带，且**文字色自动按底色亮度反差**（引擎行为，不用处理）
+- **封面**：`cover`（四宫格目录）/ `cover_title`（大字纯文字标题，`\n` 手动断行）/
+  `cover_quote`（金句，居中）。第一张最值钱，三选一，详情见 [docs/layouts.md](docs/layouts.md)
 
 ---
 

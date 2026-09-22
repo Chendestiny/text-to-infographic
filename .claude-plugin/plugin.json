@@ -1,0 +1,20 @@
+{
+  "name": "text-to-infographic",
+  "description": "Turn long articles into ready-to-publish carousel cards (cover + one page per key point). Deterministic rendering rather than AI image generation: the text stays crisp, the same spec always yields the same deck, and every page stays hand-editable.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Chendestiny"
+  },
+  "homepage": "https://github.com/Chendestiny/text-to-infographic",
+  "repository": "https://github.com/Chendestiny/text-to-infographic",
+  "license": "MIT",
+  "keywords": [
+    "infographic",
+    "carousel",
+    "xiaohongshu",
+    "article-to-image",
+    "deterministic-rendering",
+    "chinese-typography",
+    "agent-skill"
+  ]
+}

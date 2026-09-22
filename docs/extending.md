@@ -120,8 +120,14 @@ python scripts/pipeline.py examples/json/agent-roadmap.json -o build/chk   # 全
 
 四条都过，才算加完。
 
+> **如果你的版式想让页头闭嘴**（自己把标题画进 stage，像 `cover_title` / `cover_quote`
+> 那样占满整页）：把它加进 `ink.HEADERLESS` 集合，然后**自己 `_reg_slot` 登记标题文字**
+> —— 页头那支 `h1_html` 是唯一会 `_reg_text(标题)` 的地方，抑制了它而不同步登记，
+> 内容门就会报 `missing-text`。`avail` 取 `_cover_avail()`（= 整卡内高 − 边距）。
 
-## 加一种版式：只画墨迹，文字登记成"槽"
+---
+
+## 加一种新版式：只画墨迹，文字登记成"槽"
 
 文字**不要**自己算折行，也不要画 SVG `<text>`。照 `layout_flow` / `layout_chain` / `layout_compare` 写：
 
@@ -151,4 +157,50 @@ def layout_mine(card, seed):
 1. **框已上色时用 `strip_hl(...)`** 去掉 `[[高亮]]`（色带与框色打架）；未上色时保留 `[[…]]`，DOM 侧会画蜡笔底色
 2. 不要调用 `txt` / `txt_block` / `hl_line` 画正文 —— 它们是旧路径，正在退役
 
+**第三条（2026 加主题系统时补）**：**上色方框里的文字不要写死颜色**。
+`_reg_slot` 不传 `color` 时会自动看一眼"这段字是不是落在某个已上色方框里"，
+按填充色亮度选深字/浅字（`ink._ink_on`）—— 你只要保证**先 `pen_box` 再 `_reg_slot`**，
+这条就自动生效。写了 `color=` 反而会盖掉它，除非你确实要一个固定色。
+
+`color` 参数只有一种正当用法：**需要区别于正文色**的小标签（封面 kicker、金句出处）。
+
 加完版式后跑 `python scripts/run.py <spec.json> --out <目录>`，exit=0 即可。
+
+---
+
+## 加一种新皮肤（比加版式简单得多）
+
+往 `scripts/theme.py` 的 `THEMES` 加一条字典，**`ink.py` 一个字都不用改**（除非要加新的
+高亮形态或 CSS 钩子）。**先想清楚属于哪个族**：
+
+- `paper` 纸张族 —— 节点是**上色方框**，强调靠整块底色。
+- `diagram` 工程族 —— 节点是**透明底 + 主题色细描边，无笔锋笔触**，
+  强调默认是**四角刻度**（`node_style: corner`，每角一对短线）。
+  令牌：`node_line`（留空=用 ink）/ `node_w` / `node_radius` / `node_style` / `tab_size`。
+  三条硬规矩写在 `theme.py` 的模块 docstring 里 —— 尤其第一条：**底色要真透明**
+  （`node_surface` 留空 → `fill='none'`），填一层"比底色亮一点的面"就看不到网格透进框里了。
+  调外观别硬猜：`python make_style_probe.py`（列=皮肤，行=方框方案）。
+
+令牌字段表与六条纪律在 `theme.py` 的模块 docstring 里。
+加完 `python make_theme_gallery.py --family paper` 看图、`python tests/run.py` 跑回归。
+
+## 改版式时的一条新纪律：用 `node_box`，不要用 `pen_box`
+
+`pen_box` 是**纸张族**的画法（手绘上色方框）。版式里要画节点一律走 `node_box()` ——
+它按 `theme.family` 分派：纸张族 = 上色方框，工程族 = 细描边 + 强调轨。
+版式只说"这里有个节点、强调色是哪个"，**由族决定怎么画**。
+
+同理：
+
+| 要画 | 用 | 不要用 |
+|---|---|---|
+| 节点方框 | `node_box(x, y, w, h, seed, accent)` | `pen_box(..., fill)` |
+| 节点圆点（timeline/cycle） | `node_dot(cx, cy, r, accent)` | 手写 `<circle fill=...>` |
+| 节点椭圆（hub 中心） | `node_ellipse(...)` | 手写 hellipse + pen_box |
+| 节点多边形（pyramid 梯形） | `node_poly(pts, seed, accent)` | `_poly_fill` + `pen_poly` |
+| 光谱轴（spectrum） | `spectrum_bar(...)` | `grad_arrow(...)` |
+| 取规格里的 `fill` | `pick_fill(v, pal)` | `PAL.get(v) or pal.next()` |
+| 判"要不要剥高亮" | `fill_plain(fill)` | `bool(fill)` |
+
+`pick_fill` 和 `fill_plain` 这两条是**修 bug 修出来的**：前者保证 `fill: none` 真的
+不上色（`or` 写法会让它照样上色），后者保证工程族不因为"规格写了 fill"就把高亮全剥掉。

@@ -1,7 +1,7 @@
 # text-to-infographic
 
 > **Turn a long article into a ready-to-publish 3:4 card carousel** — a cover plus one page per key
-> point, hand-drawn card style. You hand it the article; the scripts own every pixel.
+> point, 7 skins to choose from. You hand it the article; the scripts own every pixel.
 
 [中文说明](README.md) · [SKILL.md](SKILL.md) · [docs/](docs/)
 
@@ -79,8 +79,12 @@ Output is `card-01.png …`, 2160×2880 by default (3:4 @2x; `render.py --scale 
 ```bash
 git clone https://github.com/Chendestiny/text-to-infographic
 cd text-to-infographic
+python -c "import yaml" || pip install pyyaml                                    # hard requirement
 python scripts/run.py examples/json/agent-roadmap.json --out out/demo           # four gates + render
 python scripts/run.py examples/json/agent-roadmap.json --budget --no-render     # slot budgets only
+python scripts/run.py examples/json/agent-roadmap.json --only 3 --out out/demo  # rework one page (1-2s)
+python scripts/run.py examples/json/agent-roadmap.json --theme blueprint --out out/demo   # switch skin
+python tests/run.py                                                             # self-test
 ```
 
 - The only dependencies are Python 3.8+, `pyyaml` and any Chromium browser (auto-detected); the font
@@ -92,150 +96,126 @@ python scripts/run.py examples/json/agent-roadmap.json --budget --no-render     
 
 ## 🖼 What comes out
 
-One long-form draft in, **9 cards** out — 2160×2880 (3:4 @2x), ready to post. Six of them, two per row
-(this is a real run, not a design mock-up):
+One deck of 8 pages, rendered under **7 skins**, 4 pages from each shown side by side — all produced
+by scripts, not by a designer:
 
-|  |  |
-|---|---|
-|![summary cover](docs/images/showcase/01-cover.png)|![compare](docs/images/showcase/02-compare.png)|
-|![flow](docs/images/showcase/03-flow.png)|![cycle](docs/images/showcase/04-cycle.png)|
-|![chain](docs/images/showcase/05-chain.png)|![spectrum](docs/images/showcase/06-spectrum.png)|
+![Crayon Paper · crayon](docs/images/showcase/01-crayon.png)
 
-The first card is a **summary cover**: a 2×2 grid where each quadrant is a miniature layout — the
-table of contents, drawn. Every card after it carries one idea. Publish them in `card-01 … card-09`
-order and the carousel is done; nothing needs retouching.
+![Terminal · terminal](docs/images/showcase/02-terminal.png)
 
----
+![Blueprint · blueprint](docs/images/showcase/03-blueprint.png)
 
-## 📐 How many cards
+![Grid Paper · grid](docs/images/showcase/04-grid.png)
 
-**Recommended range: 4–9 cards (cover included)** — 6–9 is what Xiaohongshu prefers, short posts at
-4–5 are fine, and the platform hard limit is 18. The rule and the per-size table are defined in
-**exactly one place**: [SKILL.md](SKILL.md) step 2 (three competing versions used to make the model
-second-guess itself). When you actually need the number, **run the script instead of deriving it**:
+![Mono Swiss · mono](docs/images/showcase/05-mono.png)
 
-```bash
-python scripts/run.py --plan <article.md>   # chars / sections → suggested count + range + per-card skeleton
-```
+![Retro Print · retro](docs/images/showcase/06-retro.png)
 
-**Budgets work the same way**: the character counts in the contract are only *writing advice* — whether
-copy actually fits is decided by a **real browser**. `python scripts/run.py <spec.json> --budget` prints
-each slot's size and starting font size. When rendering, `pipeline.py` also prints a per-card health
-table and names `dom-overflow` / `dom-orphan` / box or line crossings / overlap.
+![Nord · nord](docs/images/showcase/07-nord.png)
 
 ---
 
-## 🧭 How it stays correct: four gates
+## 🧩 15 layouts · 7 skins
 
-Every layout declares a **character budget for every text slot** in
-[templates/contracts.yaml](templates/contracts.yaml), measured from renders that actually look good —
-not guessed. Copy is written *inside* that budget instead of hoping it fits.
+**These are two separate things**: the layout decides *what goes where*, the skin decides *what it
+looks like*. Any of the 15 × 7 combinations works, and **not a single layout field changes**.
 
-| gate | what it is | catches |
+![layout gallery](docs/images/layouts/版式图鉴.png)
+
+`cover` 2×2 summary cover · `cover_title` big-title cover · `cover_quote` quote cover ·
+`hub` hub circle · `chain` step chain · `cycle` cycle · `spectrum` spectrum ·
+`timeline` timeline · `flow` horizontal flow · `bullets` checklist · `compare` side-by-side ·
+`matrix` 2×2 quadrants · `pyramid` tiers · `arch` architecture · `raw` raw inline SVG
+
+![skin gallery](docs/images/themes/皮肤图鉴.png)
+
+| `meta.theme` | family | what it looks like |
 |---|---|---|
-| **preflight** `preflight.py` | pure string math, milliseconds, zero tokens | quantity words that disagree with the number of items the spec actually lists ("3 things" but five rows) |
-| **spec gate** `validate.py` | renders once without a browser to compute geometry, milliseconds, zero tokens | structural problems (unknown fields / a `note` that never renders / item counts out of range / page count past the hard limit) + the **geometry wall**; over-budget copy is only a notice |
-| **pixel gate** `measure.py` | renders in a real browser and measures every **DOM text slot** and box rectangle | `dom-overflow` (genuinely does not fit), text past the canvas, text spilling out of its box, overlapping text |
-| **content gate** (inside the pixel gate) | every string the spec registered must actually appear in the render | text that is neither overflowing nor clipped but simply **never drawn**, plus tails replaced with an ellipsis |
+| `crayon` | paper | cream paper + warm-grey hand-drawn strokes + crayon bands. **Default** |
+| `grid` | paper | pale cream + light blue grid + blue-black ink |
+| `retro` | paper | newsprint cream + dark brown ink + heavy underlines |
+| `terminal` | diagram | dark navy + neon-green hairlines + grid, monospace |
+| `blueprint` | diagram | dark blue + cold-white hairlines + a double coordinate grid |
+| `mono` | diagram | white + black hairlines, the most restrained |
+| `nord` | diagram | dark grey-blue + polar palette (frost blue / aurora green / purple) |
 
-All four run inside a single command that ends with a verdict:
-`python scripts/run.py <spec.json> --article <article.md> --out <dir>`.
-Misfit copy is escalated as a `needs_llm` list, so the model gets a precise error instead of "it looks
-broken". Content and layout problems skip the retry loop (scripts cannot fix them) and come back
-naming the exact sentence. Full detail: [docs/contracts.md](docs/contracts.md) · [docs/architecture.md](docs/architecture.md).
+**The two families draw nodes differently**: paper skins distinguish nodes with *filled blocks*;
+diagram skins use a *transparent fill + a theme-colored hairline + corner ticks*, never a saturated
+fill. Fields, budgets and all four gates stay identical.
+Details: [docs/layouts.md](docs/layouts.md) (layout fields) · [assets/style.md](assets/style.md) (skin tokens).
 
----
-
-## 🧩 Layouts (13)
-
-| layout | shape | use for |
-|---|---|---|
-| `cover` | **summary cover**: title + 2×2 grid of mini layouts | first page |
-| `hub` | title + hub circle + concept boxes | parallel concepts |
-| `chain` | vertical boxes + arrows | steps, loops |
-| `cycle` | nodes on a circle, curved arrows | ReAct / PDCA |
-| `spectrum` | gradient arrow + end labels + list | "A or B?" trade-offs |
-| `timeline` | centered vertical axis, alternating labels | stages, evolution |
-| `flow` | horizontal nodes (+ bottom strip) | pipelines, data flow |
-| `bullets` | bullet rows that stretch to fill | pitfalls, checklists |
-| `compare` | two columns, inner blocks auto-fit | do / don't |
-| `matrix` | 2×2 quadrants | pick by scale or dimension |
-| `pyramid` | stacked trapezoid tiers | capability levels, priorities |
-| `arch` | nested boxes + arrow + chip row | roles, architecture |
-| `raw` | inline SVG escape hatch | anything the above cannot express |
-
-<details>
-<summary><b>All 12 rendered layout samples</b> (raw has none — click to expand)</summary>
-
-|  |  |
-|---|---|
-|![cover](docs/images/layouts/方案-01-cover-四宫格封面.png)|![hub](docs/images/layouts/方案-02-hub-中心圆.png)|
-|![chain](docs/images/layouts/方案-03-chain-步骤链.png)|![cycle](docs/images/layouts/方案-04-cycle-环形循环.png)|
-|![spectrum](docs/images/layouts/方案-05-spectrum-光谱决策.png)|![timeline](docs/images/layouts/方案-06-timeline-时间轴.png)|
-|![flow](docs/images/layouts/方案-07-flow-横向链路.png)|![compare](docs/images/layouts/方案-08-compare-左右对照.png)|
-|![bullets](docs/images/layouts/方案-09-bullets-清单.png)|![matrix](docs/images/layouts/方案-10-matrix-四象限.png)|
-|![pyramid](docs/images/layouts/方案-11-pyramid-金字塔.png)|![arch](docs/images/layouts/方案-12-arch-结构图.png)|
-
-</details>
+Pick a skin / tune the node drawing: `python make_theme_gallery.py --family paper` (writes to the
+Desktop), `python make_style_probe.py` (columns = skins, rows = box styles).
 
 ---
 
 ## ✍️ Spec syntax
 
-`[[keyword]]` paints a marker-pen highlight behind the text (colors rotate: blue → yellow → pink →
-green → gray → orange); `[[keyword|b]]` pins a color. Boxes take `fill` the same way, and boxes are
-filled by default — write `fill: none` to leave one blank on purpose.
+`[[keyword]]` adds a highlighter band (the color rotates per skin); `[[word|b]]` pins a color
+(`b` blue / `y` yellow / `p` pink / `gr` green / `g` gray / `o` orange).
+Boxes are filled by default — write `"fill": "none"` to leave one blank and say "this step is minor".
 
 ```yaml
-- layout: chain
-  title: Function Calling
-  subtitle: "[[tool_call]] is emitted by the model — your code does the work"
-  steps:
-    - {text: "① inject the [[tools definition]]"}
-    - {text: "③ the model returns tool_calls", fill: yellow}
-  note: "loop back to ② until the model stops calling tools"
+meta: { theme: crayon, footer: "" }
+cards:
+  - layout: chain
+    title: Function Calling
+    subtitle: "[[tool_call]] 是模型吐的，干活的是代码"
+    steps:
+      - {text: "① 注入 [[tools 定义]]"}
+      - {text: "③ 模型返回 tool_calls", fill: yellow}
+    note: "回到 ② 步，直到模型不再调工具"
 ```
 
 ---
 
-## 📦 Requirements
+## 🛡 Page count and the four gates
 
-| dependency | required? | notes |
-|---|---|---|
-| Python 3.8+ | yes | core scripts are stdlib-only |
-| pyyaml | **required** | the spec gate parses the contract (`templates/contracts.yaml`, YAML) with it; writing `.json` specs does not remove it (without it the gate is skipped silently) |
-| Chromium browser | to render | Chrome / Edge / Chromium, auto-detected (CDP or CLI backend) |
-| multimodal model | optional | correctness is pure text measurement; vision only adds an aesthetic last pass |
+**Run the script for the page count** instead of deriving it, and let *measurement* decide capacity
+rather than memorised budgets:
 
-## 📁 Repository layout
-
+```bash
+python scripts/run.py --plan <article.md>   # characters/sections → suggested count + range + per-page skeleton
+python scripts/run.py <spec> --budget       # per-slot size and starting font size (before writing copy)
 ```
-SKILL.md                  agent-facing entry point (workflow, contract, copy discipline)
-scripts/run.py            the single entry point: --plan / --budget / deliver (four gates + render + report)
-scripts/ink.py            rendering core: hand-drawn primitives + 13 layouts + page assembly
-scripts/decor.py          decoration parts (gears / stars, pure SVG)
-scripts/build.py          CLI: spec → HTML
-scripts/plan.py           CLI: page planning (two-level cut; suggested count + per-card skeleton)
-scripts/preflight.py      CLI: text preflight (quantity words vs actual item counts)
-scripts/capacity.py       CLI: DOM slot sizes and starting font sizes (--budget)
-scripts/review_sheet.py   CLI: 720px review thumbnails + a 2×2 contact sheet (4 cards at a glance)
-scripts/validate.py       CLI: spec gate (structural violations + geometry wall + notices)
-scripts/render.py         CLI: HTML → PNG (browser detection)
-scripts/measure.py        real-browser text measurement (pixel + content gates)
-scripts/pipeline.py       build → measure → fix loop → render, up to 3 rounds
-scripts/doctor.py         environment self-check
-scripts/vision_probe.py   one-shot check of whether the current model can really read images
-templates/contracts.yaml  per-layout character budgets (the contract)
-examples/                 5 complete specs (both .json and .yaml)
-docs/                     manuals: layouts, contracts, rendering, troubleshooting, extending
-docs/images/showcase/     the real run shown in this README
-install.ps1 / install.sh  one-line installers (clone + environment check + doctor), agent-driven
+
+| gate | what it catches |
+|---|---|
+| preflight | quantity words that disagree with the actual number of items |
+| spec gate | unknown fields / out-of-range item counts / page count over the hard cap (over-budget copy is only a notice, with an exact path) |
+| pixel gate | real-browser measurement: does not fit, drawn off-canvas, crossing a box or line, two runs of text overlapping |
+| content gate | **silently swallowed text** — copy registered in the spec that never made it onto the card, or got truncated to "…" |
+
+All four gates live inside one command and it ends with a verdict (page count lands in 4–9;
+6–9 is the platform sweet spot):
+
+```bash
+python scripts/run.py <spec.json> --article <article.md> --out <dir>   # deliver
+python scripts/run.py <spec.json> --only 3 --out <dir>                 # rework one page (1-2s)
 ```
+
+---
+
+## 📦 Runs out of the box
+
+Python 3.8+ · `pyyaml` (the spec gate parses the contract itself, so `.json` specs do not remove it) ·
+any Chromium browser (auto-detected). The font ships with the repo; no network and no multimodal
+model are required (correctness is measured as plain text).
+
+```bash
+python scripts/doctor.py    # environment self-check
+python tests/run.py         # self-test: 32 checks, about 80 seconds
+```
+
+Entry points and manuals: `SKILL.md` (agent playbook) · `scripts/run.py` (the only entry) ·
+`scripts/ink.py` (render core) · `scripts/theme.py` (skin tokens) ·
+`templates/contracts.yaml` (character contract) · `examples/` (5 complete specs) · `docs/` · `tests/`.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing code; [CHANGELOG.md](CHANGELOG.md) says what changed.
 
 ---
 
 ## 📄 License
 
-MIT for the code. The bundled font (**ZCOOL KuaiLe / 站酷快乐体**) is under the
-[SIL Open Font License 1.1](assets/fonts/OFL.txt) — see [LICENSE](LICENSE) for the split.
-That font is the only third-party asset in the repository.
+Code is MIT. The bundled font (ZCOOL KuaiLe) is under
+[SIL OFL 1.1](assets/fonts/OFL.txt); the boundary between the two is in [LICENSE](LICENSE) — it is
+also the only third-party asset in the repo. Usage boundaries: [SECURITY.md](SECURITY.md).
