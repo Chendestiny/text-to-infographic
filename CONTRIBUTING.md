@@ -80,10 +80,14 @@ python tests/run.py                            # TestTheme 那几条会盯住"�
 图片表格在手机上会把页面撑成瀑布，而且每个 `<img>` 都是一次请求。
 
 ```bash
-python make_layout_gallery.py                                   # → docs/images/layouts/版式图鉴.png
-python make_theme_gallery.py --family paper --sheet-out docs/images/themes/皮肤图鉴.png
-python make_style_probe.py terminal chain                       # 方框样式比选 → 桌面 t2i-box-styles/
+python make_layout_gallery.py                                  # → docs/images/layouts/版式图鉴.png
+python make_theme_gallery.py --strips-out docs/images/showcase  # → README「出图效果」那 7 条横条
+python make_theme_gallery.py --family paper -o <桌面目录>        # 逐套皮肤翻样张（挑皮肤时用）
+python make_style_probe.py --layout chain --styles A,G          # 方框样式比选 → 桌面 t2i-box-styles/
 ```
+
+> README 只用拼版和横条，**一行一张的图片表格不要**（手机上撑成瀑布，每个 `<img>` 都是一次请求）。
+> 跨皮肤对比表（`--sheet-out`）有 872 KB，按需生成、不进仓库 —— 皮肤长什么样看横条已经够了。
 
 > 图鉴样张讲的必须是**同一件事**：封面写着 A 题、后七张讲 B 题，放在拼版里一眼就是拼凑的
 > （这条是被用户点出来的，别再犯）。
