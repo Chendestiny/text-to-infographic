@@ -44,6 +44,21 @@ python make_theme_gallery.py --family paper                     # 皮肤图鉴�
 > 一句话自检：`python -c "import yaml"`。
 
 `pipeline.py` 再把 `ink.py`（库）/ `measure.py` / `render.py` 当模块导入。
+
+### 两个远程，推送要一起
+
+| remote | 地址 | 说明 |
+|---|---|---|
+| `origin` | `github.com/Chendestiny/text-to-infographic` | 主仓库 |
+| `gitee` | `gitee.com/destinychen/text-to-infographic` | 国内镜像（`install.ps1` 探不通 GitHub 时会走它） |
+
+README 承诺"两个仓库内容同步"，所以推完记得 `git push gitee main` —— 漏推会让国内用户装到旧版本。
+本机 `gitee` 凭据已存在凭据管理器里，不用额外登录。
+
+> **身份纪律**：本仓库的提交身份是**仓库级** `.git/config`（`Chendestiny <42106833+Chendestiny@users.noreply.github.com>`），
+> 全局配的是公司身份。新建仓库时第一件事就是补仓库级身份，否则会像 2026-09 那样
+> 混进 44 个 `chensongqi@neware.com.cn` 的提交（已用 `filter-branch` 改写 + 两个远程 force push 修掉）。
+> 推之前抽查：`git log --format='%ae|%ce' | sort -u`。
 **只有 `build.py` / `doctor.py` / `vision_probe.py` 是独立 CLI**，不走交付流程：
 `doctor.py` 是环境自检（SKILL.md 第 1 步要单独跑）、`build.py` 是"规格→HTML"的单步调试入口、
 `vision_probe.py` 判读图能力。
