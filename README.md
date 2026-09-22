@@ -20,17 +20,31 @@
 
 ### 1 · 装
 
-把这句话发给你的 Agent：
+把这句话发给你的 Agent。**Windows（PowerShell）：**
 
 ```text
 帮我安装 text-to-infographic：irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
 ```
 
-macOS / Linux 把 `install.ps1 | iex` 换成 `install.sh | bash`；GitHub 不通就把
-`raw.githubusercontent.com/Chendestiny/text-to-infographic/main` 整段换成
-`gitee.com/destinychen/text-to-infographic/raw/main`。两条随便挑 —— 脚本先探 GitHub（3 秒），
-不通自动改走 Gitee 并在两个镜像间重试；装完自己 clone 到 `~/.agents/skills/`、探
-Python / Chrome / 字体、补 `pyyaml`、跑 `doctor`。只想体检不写入：加 `-CheckOnly` / `--check-only`。
+**macOS / Linux / WSL：**
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
+```
+
+**GitHub 不通就走 Gitee 镜像（两边内容同步）：**
+
+```text
+帮我安装 text-to-infographic：irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1 | iex
+```
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://gitee.com/destinychen/text-to-infographic/raw/main/install.sh | bash
+```
+
+> 两条随便挑：脚本先探 GitHub（3 秒），不通自动改走 Gitee 并在两个镜像之间重试；装完自己
+> clone 到 `~/.agents/skills/`、探 Python / Chrome / 字体、补 `pyyaml`、跑 `doctor`。
+> 只想体检不写入：加 `-CheckOnly` / `--check-only`。
 
 ### 2 · 用
 

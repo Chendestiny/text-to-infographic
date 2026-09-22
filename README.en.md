@@ -20,18 +20,32 @@
 
 ### 1 · Install
 
-Send this line to your agent:
+Send this line to your agent. **Windows (PowerShell):**
 
 ```text
 帮我安装 text-to-infographic：irm https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.ps1 | iex
 ```
 
-On macOS / Linux swap `install.ps1 | iex` for `install.sh | bash`; if GitHub is unreachable, replace
-`raw.githubusercontent.com/Chendestiny/text-to-infographic/main` with
-`gitee.com/destinychen/text-to-infographic/raw/main`. Either line works — the script probes GitHub first
-(3 s), falls back to the Gitee mirror and retries across both; once running it clones into
-`~/.agents/skills/`, probes Python / Chrome / the bundled font, installs `pyyaml` if missing and runs
-`doctor`. Inspect only, write nothing: add `-CheckOnly` / `--check-only`.
+**macOS / Linux / WSL:**
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://raw.githubusercontent.com/Chendestiny/text-to-infographic/main/install.sh | bash
+```
+
+**Behind the Great Firewall: use the Gitee mirror** (same content, kept in sync):
+
+```text
+帮我安装 text-to-infographic：irm https://gitee.com/destinychen/text-to-infographic/raw/main/install.ps1 | iex
+```
+
+```text
+帮我安装 text-to-infographic：curl -fsSL https://gitee.com/destinychen/text-to-infographic/raw/main/install.sh | bash
+```
+
+> Pick either line: the script probes GitHub first (3 s), falls back to the Gitee mirror and retries
+> across both; once running it clones into `~/.agents/skills/`, probes Python / Chrome / the bundled
+> font, installs `pyyaml` if missing and runs `doctor`.
+> Inspect only, write nothing: add `-CheckOnly` / `--check-only`.
 
 ### 2 · Use
 
