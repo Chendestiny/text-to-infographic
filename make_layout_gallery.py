@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
-"""生成「版式方案图鉴」：每种版式渲染一张真实样张，方便挑选与回归比对。
+"""生成「版式图鉴」：每种版式渲染一张真实样张，再拼成**一张**联系表。
 
-    python make_layout_gallery.py                # 输出到 gallery-out/
-    python make_layout_gallery.py -o <dir>       # 指定输出目录
+    python make_layout_gallery.py                     # 输出到 docs/images/layouts/
+    python make_layout_gallery.py -o out/layouts      # 指定输出目录
+
+产出（`-o` 目录下）：
+    版式图鉴.png        15 种版式拼成一张（**这个才是给人看的**，README 只用它）
+    raw/<key>.png       单张原图（要细看某一版式时用；不提交进仓库）
+
+为什么只提交拼版：一行两张缩略图的图片表格在手机上会把页面撑成瀑布，
+而且每个 <img> 都是一次请求；一张拼版既省事又真的"一眼比出画歪的那张"。
 """
 import argparse
 import io
@@ -12,6 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "scripts"))
 import ink  # noqa: E402
+import sheet  # noqa: E402
 from render import find_browser, shoot, file_url  # noqa: E402
 
 FONT = os.path.join(HERE, "assets", "fonts", "ZCOOLKuaiLe-Regular.ttf")
@@ -154,42 +162,83 @@ GALLERY = [
                 {"text": "Server", "desc": "暴露工具"}],
       "note": "记这三个角色就够了"},
      "arch", "结构图"),
+
+    # ★ 两种标题封面追加在**末尾**：样张文件名带序号，
+    #   插开头会把已有 12 张全部改名、连累一堆文档链接。
+    ({"layout": "cover_title",
+      "title": "Agent 看着玄\n其实就四件事\n循环 · 工具\n记忆 · 选型",
+      "kicker": "AI Agent 工程笔记", "subtitle": "循环 / 工具 / 记忆 / 选型",
+      "accent": 2, "note": "看完能上手"},
+     "cover_title", "大字标题封面"),
+
+    ({"layout": "cover_quote",
+      "quote": "窗口是工作台，不是仓库",
+      "source": "长任务那一章的结论", "kicker": "一句话记住",
+      "note": "结论先行的封面"},
+     "cover_quote", "金句封面"),
 ]
 
-CN = {"cover": "封面", "chain": "步骤链", "cycle": "环形循环", "spectrum": "光谱决策",
+CN = {"cover": "封面", "cover_title": "大字标题封面", "cover_quote": "金句封面",
+      "chain": "步骤链", "cycle": "环形循环", "spectrum": "光谱决策",
       "timeline": "时间轴", "flow": "横向链路", "compare": "左右对照",
-      "bullets": "清单", "matrix": "四象限", "arch": "结构图", "raw": "自定义"}
+      "bullets": "清单", "matrix": "四象限", "arch": "结构图",
+      "hub": "中心圆", "pyramid": "金字塔", "raw": "自定义"}
+
+SHEET_NAME = "版式图鉴.png"
 
 
 def main():
-    ap = argparse.ArgumentParser(description="渲染全部版式的方案样张（图鉴）")
-    ap.add_argument("-o", "--out", default=os.path.join(HERE, "gallery-out"),
-                    help="样张输出目录，默认 gallery-out/")
+    ap = argparse.ArgumentParser(description="渲染全部版式的样张并拼成一张图鉴")
+    ap.add_argument("-o", "--out", default=os.path.join(HERE, "docs", "images", "layouts"),
+                    help="输出目录，默认 docs/images/layouts/")
+    ap.add_argument("--cols", type=int, default=5, help="拼版每行几张（默认 5）")
+    ap.add_argument("--thumb", type=int, default=340, help="拼版单格宽度（默认 340）")
+    ap.add_argument("--scale", type=int, default=1, help="单张出图倍率，1=1080×1440（默认）")
+    ap.add_argument("--keep-raw", action="store_true", help="同时保留单张原图")
     args = ap.parse_args()
+
     out_dir = os.path.abspath(args.out)
-    if not os.path.isdir(out_dir):
-        os.makedirs(out_dir)
-    if not os.path.isdir(BUILD):
-        os.makedirs(BUILD)
+    raw_dir = os.path.join(out_dir, "raw")
+    os.makedirs(raw_dir, exist_ok=True)
+    os.makedirs(BUILD, exist_ok=True)
 
     browser = find_browser()
-    print("浏览器：%s\n" % browser)
-    failed = []
-    for i, (card, layout, cn) in enumerate(GALLERY):
-        html = ink.render_card(card, i, len(GALLERY), {"frame": ["card"]},
+    print("浏览器：%s\n输出：%s" % (browser, out_dir))
+    pngs, labels, failed = [], [], []
+    for i, (card, layout, cn) in enumerate(GALLERY, 1):
+        html = ink.render_card(card, i - 1, len(GALLERY), {"frame": ["card"]},
                                file_url(FONT))
-        hp = os.path.join(BUILD, "g-%02d.html" % (i + 1))
+        hp = os.path.join(BUILD, "g-%02d.html" % i)
         with io.open(hp, "w", encoding="utf-8") as f:
             f.write(html)
-        png = os.path.join(out_dir, "方案-%02d-%s-%s.png" % (i + 1, layout, cn))
-        ok, msg = shoot(browser, hp, png, 1080, 1440, 2)
-        print("  %-36s %s" % (os.path.basename(png), msg))
-        if not ok:
+        png = os.path.join(raw_dir, "%02d-%s.png" % (i, layout))
+        ok, msg = shoot(browser, hp, png, 1080, 1440, args.scale)
+        print("  %-22s %s" % ("%02d %s" % (i, layout), msg))
+        if ok:
+            pngs.append(png)
+            labels.append("%02d  %s · %s" % (i, layout, cn))
+        else:
             failed.append(png)
+
+    sheet_p = None
+    if pngs:
+        sheet_p = sheet.contact_sheet(
+            pngs, os.path.join(out_dir, SHEET_NAME), cols=args.cols, thumb_w=args.thumb,
+            title="text-to-infographic · 版式图鉴（%d 种）" % len(pngs),
+            note="同一份内容换版式，像素全由脚本决定", labels=labels)
+        print("\n图鉴：%s" % sheet_p)
+
+    if not args.keep_raw:
+        for p in pngs:                    # 单张原图只是中间产物，默认不留在 assets 里
+            os.remove(p)
+        try:
+            os.rmdir(raw_dir)
+        except OSError:
+            pass
+
     if failed:
-        print("\n失败 %d 张" % len(failed))
+        print("失败 %d 张：%s" % (len(failed), ", ".join(os.path.basename(p) for p in failed)))
         return 1
-    print("\n%d 个方案 → %s" % (len(GALLERY), out_dir))
     return 0
 
 
