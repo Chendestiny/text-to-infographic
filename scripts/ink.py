@@ -71,6 +71,45 @@ DOM_TEXT = True
 # 高亮颜色反查：parse_hl 给出的是 hex，DOM 需要 CSS 类名（y/b/p/g/gr/o）
 _NAME_BY_HEX = {}
 
+# ---------------------------------------------------------------- 主题（皮肤）
+# 设计令牌本体在 theme.py；这里只负责"把令牌写进本模块的全局变量"。
+#
+# ★ 为什么走全局变量而不是把主题当参数层层传下去：13 个版式里有 60 多处直接读
+#   INK / PAL / BOX / C_TEXT，改成参数等于改 60 个调用点，而且以后每加一个版式
+#   都得记得把主题穿进去 —— 漏一处就是"这一块没换肤"，肉眼很难发现。
+#   代价是**每张卡渲染前必须重新 use_theme()**，所以 render_card 开头会自己调一次；
+#   任何绕过 render_card 的渲染路径（如 make_*_gallery.py）也要自己调。
+import theme as _theme  # noqa: E402
+
+THEME = {}                  # 当前生效的令牌（use_theme 填）
+WOBBLE = 1.0                # 手绘抖动倍率：0 = 直线
+OVER = 1.0                  # 出锋倍率：线头长出端点多少
+SW_SCALE = 1.0              # 线宽倍率
+CAP = "round"               # 线帽
+PAL_ORDER = ["blue", "yellow", "pink", "green", "gray", "orange"]
+FONT_BASE = FONT_SANS       # 基准字体栈（主题可覆盖 FONT_SANS）
+
+
+def use_theme(name):
+    """切换主题：把令牌写进模块全局。返回补全后的令牌字典。
+
+    名字写错会当场抛错（theme.get 不静默回落）—— 静默回落的表现是
+    "这个主题好像没生效"，比报错难查得多。
+    """
+    global INK, BG_PAGE, BG_CARD, BOX, C_HEAD, C_TEXT, C_NOTE, PAL
+    global WOBBLE, OVER, SW_SCALE, CAP, FONT_SANS, PAL_ORDER, THEME
+    t = _theme.get(name)
+    THEME = t
+    BG_PAGE, BG_CARD, BOX = t["bg_page"], t["bg_card"], t["box"]
+    INK = t["ink"]
+    C_HEAD, C_TEXT, C_NOTE = t["head"], t["text"], t["note"]
+    PAL = dict(t["pal"])
+    PAL_ORDER = list(t["order"])
+    WOBBLE, OVER, SW_SCALE = float(t["wobble"]), float(t["over"]), float(t["sw"])
+    CAP = t["cap"]
+    FONT_SANS = t["font"] or FONT_BASE
+    return t
+
 
 def _hl_key(hex_or_name):
     """把调色板 hex / 名字换成高亮类名字母（y/b/p/g/gr/o）。"""
@@ -84,11 +123,66 @@ def _hl_key(hex_or_name):
     return "y"
 
 
-def _reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weight=None):
-    """登记一个 DOM 文字槽：位置 + 尺寸 + 字号 + 行数上限，其余交给浏览器。"""
+_ALIGN_ALIAS = {"start": "left", "left": "left", "end": "right", "right": "right",
+                "middle": "center", "center": "center"}
+
+
+def _lum(hexcolor):
+    """颜色相对亮度（0~1）。判"这块底色上该写深字还是浅字"用。"""
+    h = str(hexcolor or "").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return 1.0
+    try:
+        r, g, b = (int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except ValueError:
+        return 1.0
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _ink_on(fill):
+    """**上色方框里**该用什么文字色。
+
+    ★ 踩过的坑：深色主题（终端/蓝图/北欧）配高饱和浅色填充时，正文色是浅灰，
+      压在琥珀/青/粉块上直接糊成一团（实测终端主题的 chain 最明显）。
+      判据用**填充色亮度**而不是"主题深不深"：亮底写深字、暗底写浅字，
+      这样浅色主题里的深色块也自动是对的。
+    """
+    if _lum(fill) >= 0.55:
+        return THEME.get("ink_on_light") or THEME.get("text") or "#151515"
+    return THEME.get("text") or "#1F1F1F"
+
+
+def _auto_slot_color(s):
+    """槽没指定颜色时，看看它是不是落在某个**已上色**方框里，是就自动反差。"""
+    if s.get("color"):
+        return s["color"]
+    cx, cy = s["x"] + s["w"] / 2.0, s["y"] + s["h"] / 2.0
+    hit = [b for b in _BOXES if b.get("fill")
+           and b["x"] <= cx <= b["x"] + b["w"] and b["y"] <= cy <= b["y"] + b["h"]]
+    if not hit:
+        return None
+    return _ink_on(min(hit, key=lambda b: b["w"] * b["h"])["fill"])
+
+
+def _reg_slot(x, y, w, h, text, size, clamp=2, align="center", min_size=15, weight=None,
+              color=None):
+    """登记一个 DOM 文字槽：位置 + 尺寸 + 字号 + 行数上限，其余交给浏览器。
+
+    `align` 收 `start/end/middle` 与 `left/right/center` 两套写法，统一归一化成
+    left/right/center —— ★ 踩过的坑：render_card 原来拿 `align == "left"` 去判，
+    而 txt()/hl_line() 传进来的是 `"start"`，两边永远不相等，
+    于是**所有左对齐/右对齐的槽其实一直是以居中渲染的**（spectrum 两端标签、
+    matrix 轴标签都中招）。归一化放在这里，调用方怎么写都不会再漏。
+
+    `color` 只在**需要区别于正文色**时给；不给时会自动看一眼"是不是落在上色方框里"
+    （`_auto_slot_color`）—— 深色主题靠这一条把高饱和填充块上的字自动转成深色。
+    """
     _SLOTS.append({"x": float(x), "y": float(y), "w": float(w), "h": float(h),
                    "text": str(text), "size": int(size), "clamp": int(clamp),
-                   "align": align, "min": int(min_size), "weight": weight})
+                   "align": _ALIGN_ALIAS.get(str(align).lower(), "center"), "min": int(min_size),
+                   "weight": weight, "color": color})
 
 
 # DOM 文字的样式：折行、行数上限（line-clamp）、垂直居中全靠 CSS ；
@@ -191,8 +285,13 @@ def _unit(ax, ay, bx, by):
 
 
 def hand_line(ax, ay, bx, by, seed, seg=7, amp=2.2, over=5.0):
-    """单条手绘折线（箭头、虚线、标注线用）。"""
+    """单条手绘折线（箭头、虚线、标注线用）。
+
+    `amp` / `over` 都会乘上主题倍率：WOBBLE=0 的主题拿到的是一条**精确直线**
+    （终端 / 野兽派 / 蓝图这些工程风就是靠这一条把整套手绘笔锋收掉的）。
+    """
     r = _rnd(seed)
+    amp, over = amp * WOBBLE, over * OVER
     ux, uy = _unit(ax, ay, bx, by)
     nx, ny = -uy, ux
     o1, o2 = r.uniform(0, over), r.uniform(0, over)
@@ -209,17 +308,26 @@ def hand_line(ax, ay, bx, by, seed, seg=7, amp=2.2, over=5.0):
     return "M" + " L".join(pts)
 
 
-def pen_edge(ax, ay, bx, by, seed, w=SW_LINE, amp=1.0, over=(1.0, 5.0)):
+def pen_edge(ax, ay, bx, by, seed, w=None, amp=1.0, over=(1.0, 5.0)):
     """一条带「笔锋」的手绘边：收笔处逐段变细变浅。
 
-    相邻段必须重叠（a -= 0.018），否则渲染出来像线条断掉而不是收窄。
+    相邻段必须重叠（a -= 0.012），否则渲染出来像线条断掉而不是收窄。
+
+    ★ WOBBLE < 0.02 时**直接返回一条整边**：收笔是"手写感"的一部分，
+      套在几何直线上就只是"线头莫名其妙变淡"，工程风主题看着像渲染坏了。
     """
+    if w is None:
+        w = SW_LINE * SW_SCALE
     r = _rnd(seed)
+    amp = amp * WOBBLE
+    over = (over[0] * OVER, over[1] * OVER)
     ux, uy = _unit(ax, ay, bx, by)
     nx, ny = -uy, ux
     o1, o2 = r.uniform(*over), r.uniform(*over)
     ax, ay = ax - ux * o1, ay - uy * o1
     bx, by = bx + ux * o2, by + uy * o2
+    if WOBBLE < 0.02:
+        return [("M%.1f %.1f L%.1f %.1f" % (ax, ay, bx, by), w, 1.0)]
     out = []
     # 收笔只在**最后 12~18%** 发生。
     # 踩过的坑：早先把 t_start 取在 0.50~0.70，等于半条边都在渐变，
@@ -258,10 +366,13 @@ def pen_rect(x, y, w, h, seed, amp=1.0, over=(1.0, 5.0)):
     return out
 
 
-def pen_path(segs, color=INK):
+def pen_path(segs, color=None):
+    """把手绘线段清单拼成 <path>。color 不传则用当前主题的墨迹色。"""
+    if color is None:
+        color = INK
     return "".join("<path d='%s' fill='none' stroke='%s' stroke-width='%.2f' "
-                   "stroke-opacity='%.2f' stroke-linecap='round' stroke-linejoin='round'/>"
-                   % (d, color, w, op) for d, w, op in segs)
+                   "stroke-opacity='%.2f' stroke-linecap='%s' stroke-linejoin='round'/>"
+                   % (d, color, w, op, CAP) for d, w, op in segs)
 
 
 def hrect_path(x, y, w, h, seed, amp=1.8, seg=5):
@@ -271,6 +382,7 @@ def hrect_path(x, y, w, h, seed, amp=1.8, seg=5):
     而"一条线"的闭合面积≈0，fill 等于没涂，只有描边生效。
     """
     r = _rnd(seed + 991)
+    amp = amp * WOBBLE
     edges = [((x, y), (x + w, y)), ((x + w, y), (x + w, y + h)),
              ((x + w, y + h), (x, y + h)), ((x, y + h), (x, y))]
     pts = []
@@ -288,14 +400,215 @@ def hrect_path(x, y, w, h, seed, amp=1.8, seg=5):
 
 
 def pen_box(x, y, w, h, seed, fill=None):
-    """手绘方框：闭合路径负责填充，四条带笔锋的线负责描边。fill=None 表示不上色。"""
-    _BOXES.append({"x": x, "y": y, "w": w, "h": h})
+    """手绘方框：闭合路径负责填充，四条带笔锋的线负责描边。fill=None 表示不上色。
+
+    `_BOXES` 里连**填充色**一起登记：DOM 槽靠它判断"这段字是不是写在一块上色方框里"，
+    从而自动选深字/浅字（见 `_auto_slot_color`）。measure.py 只读 x/y/w/h，多一个键无妨。
+
+    ★ 版式**不要直接调它** —— 调 `node_box()`。族的差异（纸张族上色、工程族只描边）
+      是皮肤的事，散在 15 个版式里就再也统一不起来了。
+    """
+    _BOXES.append({"x": x, "y": y, "w": w, "h": h, "fill": fill or ""})
     _reg_ink("box", x, y, w, h)
     d = hrect_path(x, y, w, h, seed)
     out = "" if not fill else "<path d='%s' fill='%s'/>" % (d, fill)
     # 包 <g data-ink='box'>：几何门在浏览器里 querySelector 量**真实画出来的**范围
     # （手绘笔锋会 overshoot 1~7px，名义 rect 和画出来的线不是一回事）
     return "<g data-ink='box'>%s</g>" % (out + pen_path(pen_rect(x, y, w, h, seed)))
+
+
+# ---------------------------------------------------------------- 节点（族的职责）
+def family():
+    """当前皮肤属于哪个族：`paper`（上色方框）或 `diagram`（描边节点 + 强调轨）。"""
+    return (THEME.get("family") or "paper")
+
+
+def pick_fill(v, pal):
+    """规格里 `fill` 的三态语义（与 docs/layouts.md 一致）：
+
+      没写     → 从调色板轮换取一个（**消耗**轮换次序）
+      "none"   → 明确不上色（**不消耗**轮换次序）
+      颜色名   → 用指定的那个（不消耗轮换次序）
+
+    ★ 踩过的坑：多处写成 `PAL.get(x) or pal.next()`，于是 `"fill": "none"`
+      落到 `PAL.get("none")` = None → `or pal.next()` → **照样上色**，
+      和文档承诺的「留白表达这一步不重要」正好相反。三态必须显式判，不能靠 or。
+    """
+    if v is None or v == "":
+        return pal.next()
+    if str(v).strip().lower() in ("none", "null", "false", "no", "-"):
+        return None
+    return PAL.get(v) or pal.next()
+
+
+def fill_plain(fill):
+    """方框已上色时，框内文字不再画色带 —— 色带和框色打架（引擎统一规则）。
+
+    ★ 判据是「**这块底色上还能不能看出色带**」，不是「规格里写没写 fill」。
+      工程族的节点根本没有填充，所以色带照画不误；
+      原来一律 `plain=bool(fill)`，一换到工程族就把高亮全剥掉了。
+    """
+    return bool(fill) and family() == "paper"
+
+
+def node_box(x, y, w, h, seed, fill=None, rail=True):
+    """**节点框** —— 族的差异集中在这一处，版式只管"这里有个节点、强调色是哪个"。
+
+    | 族 | 怎么画 | `fill` 是什么 |
+    |---|---|---|
+    | `paper`   | 手绘上色方框（蜡笔涂块） | 方框的**填充色** |
+    | `diagram` | 细描边矩形 + 左侧一小段强调轨 | 强调轨的**颜色**（不填充） |
+
+    `rail=False` 让工程族也不画轨（四宫格封面那种"纯分区框"用）。
+
+    踩过的坑：一开始只换颜色，把纸张族的高饱和方框填色直接套到工程风上 ——
+    暗夜终端里一块块荧光填充块，跟"工程图"这个语义完全打架。
+    """
+    if family() != "diagram":
+        return pen_box(x, y, w, h, seed, fill)
+    return _node_box_diagram(x, y, w, h, fill, rail)
+
+
+def _node_box_diagram(x, y, w, h, accent, rail=True):
+    """工程族的节点：**透明底 + 细描边 + 一处强调**，没有笔锋笔触。
+
+    用户口径（2026）：
+      · 框的背景**透明**，就是和底色一致 —— 不是"比底色亮一点的面"
+        （所以 `node_surface` 留空 → `fill='none'`，底纹和网格能直接透进框里，
+        这一点在蓝图/终端那套网格上效果特别好）
+      · 边框**黑色或跟主题色一致** —— 也就是用 `ink`（主题描边色），
+        而不是我一开始取的"低饱和中间色"
+      · **没有笔锋笔触** —— 这里画的是精确 `<rect>`，不走 `pen_rect` 那套收笔
+
+    `node_style` 决定那一处强调长什么样（rail 左轨 / tab 角块 / rule 顶线 / none）。
+    """
+    # fill 登记成空串：工程族节点**没有填充**，槽的文字色不该被"亮底反差"接管
+    _BOXES.append({"x": x, "y": y, "w": w, "h": h, "fill": ""})
+    _reg_ink("box", x, y, w, h)
+    T = THEME
+    nw = float(T.get("node_w") or 1.6)
+    r = float(T.get("node_radius") or 6)
+    surf = T.get("node_surface")           # None / "" = 透明
+    line = T.get("node_line") or INK
+    a = accent or line
+    parts = ["<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' fill='%s' "
+             "stroke='%s' stroke-width='%.2f'/>"
+             % (x, y, w, h, r, surf if surf else "none", line, nw)]
+    style = T.get("node_style") or "rail"
+    if style == "double":
+        # 双线框：外框 + 内缩一道细线（工程图常见的"内外框"）。不叠强调件
+        ins = max(5.0, nw * 3.5)
+        if w - 2 * ins > 24 and h - 2 * ins > 16:
+            parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' "
+                         "fill='none' stroke='%s' stroke-width='%.2f' stroke-opacity='.55'/>"
+                         % (x + ins, y + ins, w - 2 * ins, h - 2 * ins,
+                            max(0.0, r - ins * 0.6), line, nw * 0.7))
+    elif style == "corner":
+        # 四角刻度：每个角画一对短线（像取景框/定位标记），四角同色
+        L = max(16.0, min(w, h) * 0.16)
+        th = max(3.2, nw * 1.8)
+        for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1)):
+            px = x if sx > 0 else x + w - L
+            py = y if sy > 0 else y + h - th
+            parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s'/>"
+                         % (px, py, L, th, a))
+            px2 = x if sx > 0 else x + w - th
+            py2 = y if sy > 0 else y + h - L
+            parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s'/>"
+                         % (px2, py2, th, L, a))
+    elif rail and style == "rail":
+        rw = float(T.get("rail_w") or 0)
+        if rw > 0:
+            frac = float(T.get("rail_frac") or 0.5)
+            rh = min(h - 2 * nw - 8, max(14.0, h * frac))
+            parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' "
+                         "fill='%s'/>" % (x + nw + 3.0, y + (h - rh) / 2.0, rw, rh, rw / 2.0, a))
+    elif rail and style == "tab":
+        # 左上角一个实心小方块，压在边框上 —— 像工程图的引线标号块
+        s = float(T.get("tab_size") or 20)
+        parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' fill='%s'/>"
+                     % (x - nw / 2.0, y - nw / 2.0, s, s, min(3.0, s * 0.18), a))
+    elif rail and style == "rule":
+        # 顶边左起一段短线，像工程图节点上的"标题栏分割线"
+        rw = max(28.0, min(w * 0.26, 140.0))
+        parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' fill='%s'/>"
+                     % (x + nw + 8.0, y + nw + 8.0, rw, 4.0, 2.0, a))
+    return "<g data-ink='box'>%s</g>" % "".join(parts)
+
+
+def node_mark_html(accent, style=None):
+    """bullets 这类 **HTML 行**上的节点强调（`.row` 不是 SVG，画不了 node_box）。
+
+    形态与 `_node_box_diagram` 一一对应，别这边加一种那边忘了：
+      rail → 整条左边框染成强调色（CSS 上的 border-left）
+      tab  → 左上角一个实心小方块（绝对定位的 span）
+      rule → 顶边左起一段短线
+      none → 只留主题色细边框
+    """
+    st = style or THEME.get("node_style") or "rail"
+    T = THEME
+    nw = float(T.get("node_w") or 1.6)
+    if st == "tab":
+        s = float(T.get("tab_size") or 20)
+        return ("<span style='position:absolute;left:%.1fpx;top:%.1fpx;width:%.1fpx;"
+                "height:%.1fpx;border-radius:3px;background:%s;'></span>"
+                % (-nw / 2.0, -nw / 2.0, s, s, accent))
+    if st == "rule":
+        return ("<span style='position:absolute;left:%.1fpx;top:%.1fpx;width:%.1fpx;"
+                "height:4px;border-radius:2px;background:%s;'></span>"
+                % (nw + 8.0, nw + 8.0, 96.0, accent))
+    return ""
+
+
+def node_dot(cx, cy, r, fill):
+    """节点圆点（时间轴 / 环形循环的节点用）。纸张族是实心色点，工程族是带色环的空心点。"""
+    if family() != "diagram":
+        return "<circle cx='%.1f' cy='%.1f' r='%d' fill='%s'/>" % (cx, cy, r, fill)
+    surf = THEME.get("node_surface") or BG_CARD
+    return ("<circle cx='%.1f' cy='%.1f' r='%d' fill='%s' stroke='%s' stroke-width='2.6'/>"
+            % (cx, cy, r, surf, fill or INK))
+
+
+def node_ellipse(cx, cy, rx, ry, seed, fill):
+    """节点椭圆（hub 的中心圆用）。工程族只描边、不上色。"""
+    d = hellipse(cx, cy, rx, ry, seed)
+    if family() != "diagram":
+        return "<path d='%s' fill='%s' stroke='%s' stroke-width='%.1f'/>" % (
+            d, fill or BOX, INK, SW_LINE)
+    return "<path d='%s' fill='%s' stroke='%s' stroke-width='%.2f'/>" % (
+        d, THEME.get("node_surface") or BG_CARD, THEME.get("node_line") or INK,
+        float(THEME.get("node_w") or 1.6) * 1.4)
+
+
+def node_poly(pts, seed, fill):
+    """节点多边形（金字塔的梯形用）。
+
+    纸张族 = 上色 + 手绘描边；工程族 = **透明底 + 主题色细描边**（不用强调色）——
+    工程图里"一层的轮廓"是结构线，不是高亮，给每层配一个颜色反而像蛋糕。
+    """
+    if family() != "diagram":
+        return (_poly_fill(pts, seed, 1.6, fill)
+                + pen_path(pen_poly(pts, seed)))
+    r = _rnd(seed + 313)
+    j = [(x + r.uniform(-1.2, 1.2) * WOBBLE, y + r.uniform(-1.2, 1.2) * WOBBLE) for x, y in pts]
+    d = "M" + " L".join("%.1f %.1f" % q for q in j) + " Z"
+    return "<path d='%s' fill='none' stroke='%s' stroke-width='%.2f'/>" % (
+        d, THEME.get("node_line") or INK, max(1.6, float(THEME.get("node_w") or 1.6)))
+
+
+def spectrum_bar(x, y, w, h, gid, stops):
+    """spectrum 的横向「光谱轴」。
+
+    纸张族是那条蓝→粉渐变粗箭头（它的语义就是"从这头到那头"）；
+    工程族换成一条细轴 + 强调色，渐变块在工程风里太甜。
+    """
+    if family() != "diagram":
+        return grad_arrow(x, y, w, h, gid, stops)
+    cy = y + h / 2.0
+    t = THEME
+    return ("<path d='M%.1f %.1f L%.1f %.1f' fill='none' stroke='%s' stroke-width='%.2f' "
+            "stroke-linecap='%s' marker-end='url(#a0)'/>"
+            % (x, cy, x + w, cy, t.get("accent") or INK, 3.2, CAP))
 
 
 def dash_box(x, y, w, h, seed, label=None, label_size=28):
@@ -305,17 +618,24 @@ def dash_box(x, y, w, h, seed, label=None, label_size=28):
     或者在版式外围再包一层语义分区。
     """
     d = hrect_path(x, y, w, h, seed, amp=1.4, seg=6)
-    out = ("<path d='%s' fill='none' stroke='%s' stroke-width='3' "
-           "stroke-dasharray='14 10' stroke-linecap='round'/>" % (d, INK))
+    out = ("<path d='%s' fill='none' stroke='%s' stroke-width='%.2f' "
+           "stroke-dasharray='14 10' stroke-linecap='%s'/>" % (d, INK, 3.0 * SW_SCALE, CAP))
     if label:
         out += txt(x + w / 2, y + 30, label, label_size, fill=C_NOTE)
     return out
 
 
 def crayon(cx, y, w, h, seed, color, passes=3):
-    """蜡笔/马克笔涂写底色：多道略错位、端部不齐的半透明粗笔触叠出来。"""
+    """蜡笔/马克笔涂写底色：多道略错位、端部不齐的半透明粗笔触叠出来。
+
+    WOBBLE=0 的主题（终端/野兽派）把它降级成一条**平直色带** ——
+    蜡笔错觉靠的是抖动，抖动为 0 时多道错位只会看着像没对齐。
+    """
     r = _rnd(seed + 7)
     x0 = cx - w / 2.0
+    if WOBBLE < 0.02:
+        return ("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s' "
+                "fill-opacity='0.45'/>" % (x0, y - h * 0.5, w, h, color))
     out = []
     for i in range(passes):
         a = x0 - r.uniform(2, 9)
@@ -332,11 +652,11 @@ def crayon(cx, y, w, h, seed, color, passes=3):
 
 
 def hellipse(cx, cy, rx, ry, seed):
-    """两段不同半径的弧拼成开口椭圆，制造不规则感。"""
+    """两段不同半径的弧拼成开口椭圆，制造不规则感（WOBBLE=0 时就是正椭圆）。"""
     r = _rnd(seed + 77)
     return ("M%.1f %.1f A%.1f %.1f 0 1 1 %.1f %.1f A%.1f %.1f 0 1 1 %.1f %.1f Z"
-            % (cx - rx, cy, rx, ry, cx + rx, cy + r.uniform(-4, 4),
-               rx + r.uniform(-6, 4), ry + r.uniform(-5, 5), cx - rx, cy))
+            % (cx - rx, cy, rx, ry, cx + rx, cy + r.uniform(-4, 4) * WOBBLE,
+               rx + r.uniform(-6, 4) * WOBBLE, ry + r.uniform(-5, 5) * WOBBLE, cx - rx, cy))
 
 
 def arrow(x1, y1, x2, y2, mid, seed=1):
@@ -344,7 +664,8 @@ def arrow(x1, y1, x2, y2, mid, seed=1):
              abs(x2 - x1) + 4, abs(y2 - y1) + 4)
     d = hand_line(x1, y1, x2, y2, seed, seg=8, amp=1.6, over=0)
     return ("<g data-ink='line'><path d='%s' fill='none' stroke='%s' stroke-width='%.1f' "
-            "stroke-linecap='round' marker-end='url(#%s)'/></g>" % (d, INK, SW_ARROW, mid))
+            "stroke-linecap='%s' marker-end='url(#%s)'/></g>"
+            % (d, INK, SW_ARROW * SW_SCALE, CAP, mid))
 
 
 def v_arrow(x, y1, y2, mid, seed=3):
@@ -354,12 +675,15 @@ def v_arrow(x, y1, y2, mid, seed=3):
 def defs(mid):
     return ("<defs><marker id='%s' viewBox='0 0 10 10' refX='7.5' refY='5' markerWidth='5' "
             "markerHeight='5' orient='auto-start-reverse'><path d='M2 1L8 5L2 9' fill='none' "
-            "stroke='%s' stroke-width='3.1' stroke-linecap='round' stroke-linejoin='round'/>"
-            "</marker></defs>" % (mid, INK))
+            "stroke='%s' stroke-width='%.2f' stroke-linecap='round' stroke-linejoin='round'/>"
+            "</marker></defs>" % (mid, INK, 3.1 * min(1.6, max(0.6, SW_SCALE))))
 
 
 def frame_overlay(kind, seed):
-    """整卡外框：pen = 手绘外框 / card = 圆角卡 / none = 无框。"""
+    """整卡外框：pen = 手绘外框 / card = 圆角卡 / none = 无框。
+
+    描边几何跟着主题走：WOBBLE=0 的主题拿到的是一条**精确矩形**。
+    """
     if kind != "pen":
         return ""
     # 外框线本身要登记：文字压到卡框是肉眼可见缺陷，用 rect 求交就能抓
@@ -491,15 +815,16 @@ class Palette:
     用户反馈：整页全黄太单调。方框填色和蜡笔色带都从这里按顺序取，
     一页之内蓝→黄→粉→灰轮着来；跨卡用不同起点，卡与卡之间也不同。
     规格里显式指定的颜色（fill / [[x|b]]）永远优先，且不消耗轮换。
+
+    轮换顺序由主题给（`PAL_ORDER`）—— 素白细线这类主题要"大部分淡、偶尔一个亮点"，
+    把灰色排在前面比换一套调色板更能表达这个意思。
     """
 
-    ORDER = ["blue", "yellow", "pink", "green", "gray", "orange"]
-
     def __init__(self, start=0):
-        self.i = start % len(self.ORDER)
+        self.i = start % len(PAL_ORDER)
 
     def next(self):
-        c = PAL[self.ORDER[self.i % len(self.ORDER)]]
+        c = PAL[PAL_ORDER[self.i % len(PAL_ORDER)]]
         self.i += 1
         return c
 
@@ -661,14 +986,14 @@ def _mini_list(x, y, w, h, items, pal, seed, q):
     fs = int(q.get("fs") or min(36, max(24, rh * 0.34)))
     for i, it in enumerate(items):
         y0 = y + i * (rh + g)
-        fill = PAL.get(it.get("fill")) or pal.next()
-        out.append(pen_box(x, y0, w, rh, seed + i * 7, fill))
+        fill = pick_fill(it.get("fill"), pal)
+        out.append(node_box(x, y0, w, rh, seed + i * 7, fill))
         cy = y0 + rh / 2
         out.append("<path d='M%.1f %.1f l%.1f %.1f l%.1f %.1f' fill='none' stroke='%s' "
                    "stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/>"
                    % (x + 22, cy, 10, 10, 12, -19, INK))
         out.append(hl_line(x + 50 + (w - 50) / 2, cy + fs * 0.34,
-                           parse_hl(it.get("text", ""), pal, plain=True), fs,
+                           parse_hl(it.get("text", ""), pal, plain=fill_plain(fill)), fs,
                            seed + i, maxw=w - 60))
     return "".join(out)
 
@@ -685,8 +1010,8 @@ def _mini_boxes(x, y, w, h, items, pal, seed, q):
                                      bw - 16, min(34, max(22, bw * 0.20))))
     for i, it in enumerate(items):
         x0 = x + i * (bw + g)
-        fill = PAL.get(it.get("fill")) or pal.next()
-        out.append(pen_box(x0, y, bw, bh, seed + i * 9, fill))
+        fill = pick_fill(it.get("fill"), pal)
+        out.append(node_box(x0, y, bw, bh, seed + i * 9, fill))
         out.append(txt_block(x0 + bw / 2, y + bh / 2 + fs * 0.2,
                              strip_hl(it.get("text", "")), fs, bw - 16,
                              max_lines=2, tag="mb-t%d" % i))
@@ -696,7 +1021,7 @@ def _mini_boxes(x, y, w, h, items, pal, seed, q):
     if line:
         y1 = y + bh + 14
         h1 = h - bh - 14
-        out.append(pen_box(x, y1, w, h1, seed + 77, BOX))
+        out.append(node_box(x, y1, w, h1, seed + 77, BOX, rail=False))
         out.append(hl_line(x + w / 2, y1 + h1 / 2 + 11,
                            parse_hl(line, pal), int(q.get("fs2") or 30),
                            seed + 3, maxw=w - 30))
@@ -705,7 +1030,7 @@ def _mini_boxes(x, y, w, h, items, pal, seed, q):
 
 def _mini_nested(x, y, w, h, items, pal, seed, q):
     """微缩嵌套：一个大框内嵌 N 个子框，底部可选一排 chip。"""
-    out = [pen_box(x, y, w, h, seed, BOX)]
+    out = [node_box(x, y, w, h, seed, BOX, rail=False)]
     n = max(1, len(items))
     g = 12
     iw = int((w - 32 - (n - 1) * g) / n)
@@ -714,8 +1039,8 @@ def _mini_nested(x, y, w, h, items, pal, seed, q):
                                      iw - 16, min(34, max(22, iw * 0.22))))
     for i, it in enumerate(items):
         x0 = x + 16 + i * (iw + g)
-        fill = PAL.get(it.get("fill")) or pal.next()
-        out.append(pen_box(x0, y + 18, iw, ih, seed + i * 11, fill))
+        fill = pick_fill(it.get("fill"), pal)
+        out.append(node_box(x0, y + 18, iw, ih, seed + i * 11, fill))
         out.append(txt_block(x0 + iw / 2, y + 18 + fs * 1.2,
                              strip_hl(it.get("text", "")), fs, iw - 16,
                              max_lines=2, tag="mn-t%d" % i))
@@ -728,9 +1053,9 @@ def _mini_nested(x, y, w, h, items, pal, seed, q):
         cw = int((w - 32 - (len(chips) - 1) * 12) / len(chips))
         for i, c in enumerate(chips):
             x0 = x + 16 + i * (cw + 12)
-            out.append(pen_box(x0, y + h - 88, cw, 68, seed + i * 13, pal.next()))
+            out.append(node_box(x0, y + h - 88, cw, 68, seed + i * 13, pal.next()))
             out.append(hl_line(x0 + cw / 2, y + h - 45,
-                               parse_hl(c, pal, plain=True), 28, seed + i,
+                               parse_hl(c, pal, plain=fill_plain(True)), 28, seed + i,
                                maxw=cw - 14))
     return "".join(out)
 
@@ -747,8 +1072,8 @@ def _mini_steps(x, y, w, h, items, pal, seed, q):
     out = []
     for i, it in enumerate(items):
         x0 = x + i * (bw + g)
-        fill = PAL.get(it.get("fill")) or pal.next()
-        out.append(pen_box(x0, yy, bw, bh, seed + i * 15, fill))
+        fill = pick_fill(it.get("fill"), pal)
+        out.append(node_box(x0, yy, bw, bh, seed + i * 15, fill))
         out.append(txt_block(x0 + bw / 2, yy + bh / 2 + fs * 0.2,
                              strip_hl(it.get("text", "")), fs, bw - 16,
                              max_lines=2, tag="ms-t%d" % i))
@@ -778,15 +1103,14 @@ def layout_hub(card, seed):
         gap = 40
         w = (bw - gap * (n - 1)) // max(1, n)
         top, bh, cy = 430, 300, 200
-        parts.append("<path d='%s' fill='%s' stroke='%s' stroke-width='%.1f'/>"
-                     % (hellipse(W_INNER / 2, cy, 124, 108, 1), BOX, INK, SW_LINE))
+        parts.append(node_ellipse(W_INNER / 2, cy, 124, 108, 1, None))
         if card.get("hub"):
             parts.append(txt(W_INNER / 2, cy + 19, card["hub"], 54, maxw=200,
                              tag="hub-title"))
         for i, it in enumerate(items):
             x = bx + i * (w + gap)
-            fill = it.get("color") and PAL.get(it["color"]) or pal.next()
-            parts.append(pen_box(x, top, w, bh, i * 11 + 3, fill))
+            fill = PAL.get(it["color"]) if it.get("color") else pal.next()
+            parts.append(node_box(x, top, w, bh, i * 11 + 3, fill))
             if it.get("big"):
                 parts.append(txt(x + w / 2, top + 92, it["big"], 58,
                                  maxw=w - 24, tag="hub-big%d" % i))
@@ -808,10 +1132,10 @@ def layout_hub(card, seed):
         top = 40
         for i, it in enumerate(items):
             y = top + i * (bh + gap)
-            parts.append(pen_box(bx, y, bw, bh, i * 11 + 3, pal.next()))
+            parts.append(node_box(bx, y, bw, bh, i * 11 + 3, pal.next()))
             parts.append(hl_line(W_INNER / 2, y + 82,
                                  parse_hl(it.get("text", it.get("big", "")), pal,
-                                          plain=True),
+                                          plain=fill_plain(True)),
                                  SIZES["body"], i * 13 + 5))
     if card.get("note"):
         parts.append(txt_block(W_INNER / 2, avail - 66, strip_hl(card["note"]),
@@ -864,7 +1188,7 @@ def layout_cover(card, seed):
     for i, q in enumerate(quads):
         x = bx + (i % 2) * (tw_ + g)
         y = (i // 2) * (th_ + g)
-        parts.append(pen_box(x, y, tw_, th_, i * 17 + 5, BOX))
+        parts.append(node_box(x, y, tw_, th_, i * 17 + 5, BOX, rail=False))
         if q.get("label"):
             # 没写 [[高亮]] 也给它一条底色 —— 参考图里每个模块标签都有彩色小标签
             lb = parse_hl(q["label"], pal)
@@ -891,6 +1215,191 @@ def layout_cover(card, seed):
             % (W_INNER, stage_h, W_INNER, stage_h, "".join(parts)))
 
 
+# ---------------------------------------------------------------- 标题封面
+# 这两种封面**不用页头**：标题要占到 100~124px，还可能要一条压字的粗色条，
+# 页头那套（居中 h1 + 居中 sub）给不了。所以它们在 HEADERLESS 里，
+# 标题由版式自己画，`subtitle` 的含义也变成"副标题/出处"。
+HEADERLESS = {"cover_title", "cover_quote"}
+
+
+def _cover_avail():
+    """无页头版式可用的 stage 高度：整卡内高减去 `.stage` 的上边距与底部呼吸位。"""
+    return H_CARD - 2 * PAD_TOP - 44 - 12
+
+
+def _accent_bar(x, y, w, h, seed, color):
+    """强调色条：手绘主题是蜡笔涂的一笔，几何主题是干净矩形。
+
+    不登记墨迹 —— 它**本来就压在文字正下方**，登记成 box/line 会被几何门
+    按"文字穿越"报出来（这是设计意图，不是缺陷）。位置由本函数自己保证。
+    """
+    if WOBBLE < 0.02:
+        return ("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' fill='%s'/>"
+                % (x, y, w, h, min(4.0, h * 0.35), color))
+    return crayon(x + w / 2.0, y + h / 2.0, w, h, seed, color, passes=3)
+
+
+def layout_cover_title(card, seed):
+    """大字标题封面：整页只有一句话，靠字号和断行说话。
+
+    参照的是小红书最常见的一种封面 —— **左对齐、一行一个词组、其中一行压一条粗色条**。
+    和 `cover`（四宫格）是两个方向：四宫格是"目录"，这个是"标题"；
+    图文里第一张的说服力几乎全在这一页，所以它给到比页头 h1 更大的字号（上限 124）。
+
+    规格：
+      title      主标题，**用 \\n 手动断行**（自动折行会把词组切散，封面最忌这个）
+      accent     第几行压色条（1 起，默认 2；只有一行时默认 1）
+      kicker     左上角小标签（可选，用强调色）
+      subtitle   标题下方的支撑句（可选，一行）
+      note       最底部小字（可选）
+    """
+    pal = Palette(seed)
+    lines = [t.strip() for t in str(card.get("title") or "").split("\n") if t.strip()] or ["（标题）"]
+    kicker = strip_hl(str(card.get("kicker") or ""))
+    support = strip_hl(str(card.get("subtitle") or ""))
+    note = strip_hl(str(card.get("note") or ""))
+    try:
+        ai = int(card.get("accent") or (2 if len(lines) >= 2 else 1)) - 1
+    except (TypeError, ValueError):
+        ai = 1 if len(lines) >= 2 else 0
+    ai = max(0, min(len(lines) - 1, ai))
+
+    avail = _cover_avail()
+    k_h = 34 * 1.5 if kicker else 0
+    s_h = 44 * 1.5 + 18 if support else 0
+    n_h = 36 * 1.5 + 16 if note else 0
+    room = max(220.0, avail - k_h - s_h - n_h - 40)
+
+    # 字号：既要一行放得下（不折行），又要整块高度放得下
+    em = max(tw(t, 100.0) / 100.0 for t in lines) or 1.0
+    size = min(124, int(W_INNER / em))
+
+    def _total(s):
+        return (len(lines) * s * 1.22 + s * 0.30
+                + max(8.0, s * (0.12 if WOBBLE < 0.02 else 0.18)))
+
+    while size > 44 and _total(size) > room:
+        size -= 2
+
+    lh = size * 1.22
+    bar_h = max(8.0, size * (0.12 if WOBBLE < 0.02 else 0.18))
+    block = _total(size)
+    parts = [defs("a0")]
+    y = (avail - block) / 2.0
+    if y < k_h + 8:
+        y = k_h + 8
+    if kicker:
+        _reg_slot(0, k_h * 0.25, W_INNER, k_h, kicker, 34, clamp=1, align="start",
+                  min_size=20, weight=700, color=kicker_color(pal))
+    for i, ln in enumerate(lines):
+        _reg_slot(0, y, W_INNER, lh, ln, size, clamp=1, align="start",
+                  min_size=max(30, int(size * 0.6)), weight=800)
+        if i == ai:
+            bw = min(W_INNER, tw(ln, size) * 0.96)
+            parts.append(_accent_bar(0, y + lh * 0.96, bw, bar_h, seed + i * 13, pal_color(pal)))
+            y += lh + bar_h + size * 0.24
+        else:
+            y += lh
+    if support:
+        sy = max(y + 18, avail - n_h - s_h)
+        _reg_slot(0, sy, W_INNER, s_h - 18, support, 44, clamp=1, align="start",
+                  min_size=26, weight=600, color=C_NOTE)
+    if note:
+        _reg_slot(0, avail - n_h + 8, W_INNER, n_h - 8, note, 36, clamp=2, align="start",
+                  min_size=20, color=C_NOTE)
+    parts.append("</svg>")
+    return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
+            "xmlns='http://www.w3.org/2000/svg'>%s"
+            % (W_INNER, int(avail), W_INNER, int(avail), "".join(parts)))
+
+
+def layout_cover_quote(card, seed):
+    """金句封面：整页一句最锋利的话 + 出处。
+
+    和 `cover_title` 的区别：标题封面说"这篇讲什么"，金句封面说"这篇的结论是什么"。
+    排版上它是**居中**的（标题封面左对齐），靠上下两条短色条把它框成一块。
+    整句登记成**一个槽**（clamp=6），折行完全交给浏览器 —— 手工折行会在
+    不同字号下断错地方。
+
+    规格：
+      quote    金句正文（可写 [[关键词]] 上色）
+      source   出处 / 作者（可选）
+      kicker   左上角小标签（可选）
+      note     底部小字（可选）
+    """
+    pal = Palette(seed)
+    quote = strip_hl(str(card.get("quote") or card.get("title") or ""))
+    kicker = strip_hl(str(card.get("kicker") or ""))
+    source = strip_hl(str(card.get("source") or card.get("subtitle") or ""))
+    note = strip_hl(str(card.get("note") or ""))
+    if not quote:
+        quote = "（金句）"
+
+    avail = _cover_avail()
+    k_h = 34 * 1.5 if kicker else 0
+    s_h = 40 * 1.6 + 20 if source else 0
+    n_h = 36 * 1.5 + 16 if note else 0
+    room = max(260.0, avail - k_h - s_h - n_h - 90)
+
+    # 字号：按"整句最多排 4 行"反解，再夹到 [46, 88]
+    em = tw(quote, 100.0) / 100.0 or 1.0
+    size = max(46, min(88, int(W_INNER * 4 / em)))
+    est = max(1, int(math.ceil(em * size / float(W_INNER) - 1e-6)))
+    while est * size * 1.32 > room and size > 40:
+        size -= 2
+        est = max(1, int(math.ceil(em * size / float(W_INNER) - 1e-6)))
+
+    parts = [defs("a0")]
+    qh = est * size * 1.32
+    top = k_h + (avail - k_h - s_h - n_h - qh) / 2.0
+    top = max(top, k_h + 12)
+    if kicker:
+        _reg_slot(0, k_h * 0.25, W_INNER, k_h, kicker, 34, clamp=1, align="start",
+                  min_size=20, weight=700, color=kicker_color(pal))
+    _reg_slot(0, top, W_INNER, qh, quote, size, clamp=6, align="center",
+              min_size=max(28, int(size * 0.55)), weight=800)
+    # 上下两条短色条：把整段金句"框"起来（长度不同，避免看着像边框）
+    rw1 = min(W_INNER * 0.34, size * 4.2)
+    rw2 = min(W_INNER * 0.22, size * 2.8)
+    rh = max(7.0, size * (0.10 if WOBBLE < 0.02 else 0.16))
+    c1, c2 = pal_color(pal), pal_color(pal)
+    parts.append(_accent_bar((W_INNER - rw1) / 2.0, top - rh - 26, rw1, rh, seed + 3, c1))
+    # ★ 下条也居中：试过右对齐，短条孤零零挂在右下角，看着像渲染漏了一块
+    parts.append(_accent_bar((W_INNER - rw2) / 2.0, top + qh + 22, rw2, rh, seed + 9, c2))
+    if source:
+        sy = min(top + qh + 22 + rh + 24, avail - n_h - s_h + 6)
+        _reg_slot(0, sy, W_INNER, s_h - 20, "— " + source, 40, clamp=1, align="center",
+                  min_size=24, weight=600, color=C_NOTE)
+    if note:
+        _reg_slot(0, avail - n_h + 8, W_INNER, n_h - 8, note, 36, clamp=2, align="center",
+                  min_size=20, color=C_NOTE)
+    parts.append("</svg>")
+    return ("<svg class='stage' width='%d' height='%d' viewBox='0 0 %d %d' "
+            "xmlns='http://www.w3.org/2000/svg'>%s"
+            % (W_INNER, int(avail), W_INNER, int(avail), "".join(parts)))
+
+
+def pal_color(pal):
+    """取一个强调色（色条 / 色块用）。
+
+    主题给了 `accent` 就用它（终端主题那条荧光绿压字条必须和描边同色，
+    参考图上就是这样），否则按页从调色板轮换。
+    """
+    a = THEME.get("accent")
+    return a if a else pal.next()
+
+
+def kicker_color(pal):
+    """左上角小标签的颜色。
+
+    ★ 不能直接复用 `accent`：accent 是给**色条**用的，实测新野兽派那支
+      亮黄(#FFD84D)当文字色落在白底上直接看不见。所以小标签有独立令牌，
+      没给就回落到调色板轮换（蜡笔纸感那支黄字效果正好）。
+    """
+    k = THEME.get("kicker")
+    return k if k else pal.next()
+
+
 def layout_chain(card, seed):
     """竖向步骤链：每个方框都上色，颜色按页轮换。"""
     steps = card.get("steps", [])
@@ -914,13 +1423,12 @@ def layout_chain(card, seed):
                                card.get("dashed_label")))
     for i, st in enumerate(steps):
         y = top + i * step
-        f = st.get("fill")
-        fill = PAL.get(f) if f else pal.next()
-        parts.append(pen_box(bx, y, bw, bh, i * 7 + 3, fill))
+        fill = pick_fill(st.get("fill"), pal)
+        parts.append(node_box(bx, y, bw, bh, i * 7 + 3, fill))
         # ★ DOM 文字（阶段②）：只给"框"，折行/居中/缩放交给浏览器。
         #   框已上色时去掉 [[高亮]] —— 色带和框色打架，这条规则与 SVG 模式一致。
         _reg_slot(bx + 16, y + 12, bw - 32, bh - 24,
-                  strip_hl(st.get("text", "")) if fill else st.get("text", ""),
+                  strip_hl(st.get("text", "")) if fill_plain(fill) else st.get("text", ""),
                   SIZES["body"], clamp=1, min_size=20)
         if i < n - 1:
             parts.append(v_arrow(W_INNER / 2, y + bh, y + step - 2, "a0", i * 13 + 3))
@@ -971,8 +1479,8 @@ def layout_cycle(card, seed):
                 cy + R * math.sin(ang0 + 2 * math.pi * i / n)) for i in range(n)]
     for i, nd in enumerate(nodes[:n]):
         x, y = centers[i]
-        fill = PAL.get(nd.get("fill")) or pal.next()
-        parts.append(pen_box(x - bw / 2, y - bh / 2, bw, bh, i * 15 + 3, fill))
+        fill = pick_fill(nd.get("fill"), pal)
+        parts.append(node_box(x - bw / 2, y - bh / 2, bw, bh, i * 15 + 3, fill))
         parts.append(txt(x, y + 6, strip_hl(nd.get("text", "")), 44, maxw=bw - 24,
                          tag="cycle-%d" % i))
         if nd.get("desc"):
@@ -1007,10 +1515,7 @@ def layout_spectrum(card, seed):
     parts = [defs("a0")]
     # 渐变只留 蓝 → 粉：两端不要灰也不要黑（用户明确要求）
     stops = card.get("gradient") or [(PAL["blue"], "0"), (PAL["pink"], "1")]
-    parts.append(_poly_fill([(bx - 10, 152), (bx + bw + 10, 152),
-                             (bx + bw + 10, 254), (bx - 10, 254)],
-                            seed + 5, 2.0, None))           # 箭头底色：透明（原来填白）
-    parts.append(grad_arrow(bx, 168, bw, 70, "specgrad%d" % seed, stops))
+    parts.append(spectrum_bar(bx, 168, bw, 70, "specgrad%d" % seed, stops))
     ends = card.get("ends") or []
     if len(ends) == 2:
         parts.append(txt(bx + 6, 288, ends[0], 42, anchor="start", weight="700"))
@@ -1026,7 +1531,7 @@ def layout_spectrum(card, seed):
     y = 400
     for i, it in enumerate(items):
         parts.append("<circle cx='%.1f' cy='%.1f' r='8' fill='%s'/>"
-                     % (bx + 16, y - 16, INK))
+                     % (bx + 16, y - 16, pal_color(pal)))
         parts.append(hl_line(bx + 44, y, parse_hl(it.get("text", it.get("head", "")), pal),
                              48, seed + i * 13 + 5, align="start", maxw=bw - 100))
         y += 112
@@ -1060,14 +1565,15 @@ def layout_timeline(card, seed):
     step = (bottom - top) / max(1, n - 1)
     for i, st in enumerate(steps[:n]):
         y = top + i * step
-        fill = PAL.get(st.get("fill")) or pal.next()
-        parts.append("<circle cx='%.1f' cy='%.1f' r='15' fill='%s'/>" % (ax, y, fill))
+        fill = pick_fill(st.get("fill"), pal)
+        parts.append(node_dot(ax, y, 15, fill))
         left = (i % 2 == 0)
         cx = ax - 48 - col_w / 2.0 if left else ax + 48 + col_w / 2.0
         x1 = ax - 15 if left else ax + 15
         x2 = ax - 48 if left else ax + 48
         parts.append(hand_line(x1, y, x2, y, seed + i, 3, 1.2, 2))
-        parts.append(hl_line(cx, y - 10, parse_hl(st.get("text", ""), pal, plain=True),
+        parts.append(hl_line(cx, y - 10, parse_hl(st.get("text", ""), pal,
+                                                  plain=fill_plain(fill)),
                              42, seed + i * 9, maxw=col_w))
         if st.get("desc"):
             # ★ 说明要压在标题下方：标题字号 42、基线在 y-10，两行说明会把首行上移
@@ -1138,8 +1644,8 @@ def layout_flow(card, seed):
     #   契约字数上限对 flow 已经没有意义。字体在这里只是"起手字号"，缩多少由 JS 实测决定。
     for i, nd in enumerate(nodes):
         x = bx + i * (w + gap)
-        fill = PAL.get(nd.get("fill")) or pal.next()
-        parts.append(pen_box(x, top, w, bh, i * 15 + 3, fill))
+        fill = pick_fill(nd.get("fill"), pal)
+        parts.append(node_box(x, top, w, bh, i * 15 + 3, fill))
         _reg_slot(x + 12, top + 12, w - 24, 54, strip_hl(nd.get("text", "")),
                   SIZES["body"] - 10, clamp=1)
         if nd.get("desc"):
@@ -1172,8 +1678,8 @@ def layout_flow(card, seed):
         cwid = (bw - (m - 1) * 24) // m
         for i, c in enumerate(bottom):
             x = bx + i * (cwid + 24)
-            parts.append(pen_box(x, by, cwid, 150, i * 23 + 5,
-                                 PAL.get(c.get("fill")) or pal.next()))
+            parts.append(node_box(x, by, cwid, 150, i * 23 + 5,
+                                  pick_fill(c.get("fill"), pal)))
             _reg_slot(x + 12, by + 18, cwid - 24, 56, strip_hl(c.get("text", "")),
                       36, clamp=1, min_size=18)
             if c.get("desc"):
@@ -1204,9 +1710,31 @@ def layout_bullets(card, seed):
     head_fs = max(24, int(48 * unit))
     desc_fs = max(22, int(38 * unit))
     rows = []
+    diag = (family() == "diagram")
     for it in items:
-        fill = PAL.get(it.get("fill")) or pal.next()
+        fill = pick_fill(it.get("fill"), pal)
         plain = bool(fill)      # 行已上色，行内不再画色带
+        # 行底色是每行单独给的，所以文字色必须**内联**跟着行底色反差 ——
+        # 深色主题下 .row .head 的浅色会被高饱和行底色吃掉（实测终端主题的
+        # 粉/琥珀/青三行整段读不出来）。
+        #
+        # ★ 工程族：**不给行上色**（高饱和整行填充在工程风里最突兀），改成
+        #   "节点底色 + 左侧一条强调轨"，文字色就是正文色，不需要反差。
+        if diag:
+            # 工程族：**不给行上色**（高饱和整行填充在工程风里最突兀），
+            # 底透明（露出网格）+ 主题色细边框 + 一处强调（与 node_box 同一套形态）
+            st = THEME.get("node_style") or "rail"
+            extra = ""
+            if st == "rail":
+                rw = max(3.0, float(THEME.get("rail_w") or 0) or 3.0)
+                extra = "border-left:%.1fpx solid %s;" % (rw, fill or THEME.get("node_line"))
+            style = "background:transparent;" + extra
+            mark = node_mark_html(fill or (THEME.get("node_line") or INK)) if st in ("tab", "rule") else ""
+            ic = THEME.get("text") or C_TEXT
+        else:
+            style = "background:%s;" % (fill or BOX)
+            mark = ""
+            ic = _ink_on(fill)
         if plain:
             # 这一支用 esc 直接拼 HTML，绕过了 _inline → 要手动登记，
             # 否则内容门对「已上色行」的文字失明
@@ -1216,24 +1744,38 @@ def layout_bullets(card, seed):
         desc = _inline(it.get("desc", "")) if not plain else esc(strip_hl(it.get("desc", "")))
         no = "<span class='no'>%s</span>" % esc(it["no"]) if it.get("no") else ""
         rows.append(
-            "<div class='row' style='background:%s;'>"
-            "<div class='head' style='font-size:%dpx'>%s%s</div>"
+            "<div class='row' style='%s'>%s"
+            "<div class='head' style='font-size:%dpx;color:%s'>%s%s</div>"
             "%s</div>"
-            % (fill, head_fs, no, head,
-               ("<div class='desc' style='font-size:%dpx;margin-top:%dpx'>%s</div>"
-                % (desc_fs, max(4, int(12 * unit)), desc)) if desc else ""))
+            % (style, mark, head_fs, ic, no, head,
+               ("<div class='desc' style='font-size:%dpx;margin-top:%dpx;color:%s'>%s</div>"
+                % (desc_fs, max(4, int(12 * unit)), ic, desc)) if desc else ""))
     return "<div class='bullets'>%s</div>" % "".join(rows)
 
 
 def _inline(text):
-    """HTML 内联高亮（显式指定的颜色才生效）。"""
+    """HTML 内联高亮：`[[词]]` → `<span class="hl y">`，底色由 `.hl.<字母>::before` 给。
+
+    ★★ 这里踩过一个**潜伏很久**的坑，别再犯：原来写的是
+        `col = COLOR_KEY.get(m.group(2) or "", "y")`
+      而 `COLOR_KEY` 是 **字母 → 颜色名** 的映射（`{"gr": "green"}`），
+      CSS 里定义的却是 **字母** 类名（`.hl.gr`）。于是：
+        · `[[词]]`（不带 `|`）→ 默认 `"y"` → 命中 `.hl.y` ✓ 能上色
+        · `[[词|gr]]` / `hl_line` 重建出来的任何非默认色 → `"green"` →
+          `.hl.green` **没有任何规则**，底色透明 ✗
+      结果就是"所有彩色高亮一直是透明的"，而**四道门一声不响** ——
+      字在、位置对、不压线，只是没颜色。内容门也抓不到（文字确实在图上）。
+
+      正确的口径：group(2) 本身就是 CSS 类名字母，直接用；只做一次合法性兜底。
+    """
     if not text:
         return ""
     _reg_text(text)
     out, pos = [], 0
     for m in HL_RE.finditer(text):
         out.append(esc(text[pos:m.start()]))
-        col = COLOR_KEY.get(m.group(2) or "", "y")
+        key = m.group(2) or ""
+        col = key if key in COLOR_KEY else "y"     # COLOR_KEY 的 key 就是 CSS 类名
         out.append("<span class='hl %s'>%s</span>" % (col, esc(m.group(1))))
         pos = m.end()
     # 尾巴必须补上：否则「[[高亮]]后面的文字」会被静默吃掉，
@@ -1259,7 +1801,8 @@ def layout_compare(card, seed):
         # ★ DOM 文字（阶段②）：列标题、块文字、备注全部登记为 slot
         _reg_slot(x0 + 4, 22, col_w - 8, 60, cfg.get("label", ""), 44,
                   clamp=1, min_size=22)
-        g.append(pen_box(x0 + 3, box_y, col_w - 6, box_h, seed0 + 1, None))
+        g.append(node_box(x0 + 3, box_y, col_w - 6, box_h, seed0 + 1, pal.next(),
+                          rail=False))
         blocks = cfg.get("blocks", [])
         n = max(1, len(blocks))
         area_y = box_y + pad
@@ -1267,13 +1810,15 @@ def layout_compare(card, seed):
         bh = (area_h - (n - 1) * 22) / float(n)
         for i, b in enumerate(blocks):
             f = b.get("fill") if isinstance(b, dict) else None
-            fill = PAL.get(f) if f else pal.next()
+            fill = pick_fill(f, pal)
             text = b.get("text", "") if isinstance(b, dict) else b
             y = area_y + i * (bh + 22)
-            g.append(pen_box(x0 + 30, y, col_w - 60, bh, seed0 + i * 13 + 9, fill))
-            # 框已上色时去掉 [[高亮]]（色带与框色打架），与 SVG 模式规则一致
+            g.append(node_box(x0 + 30, y, col_w - 60, bh, seed0 + i * 13 + 9, fill))
+            # 框已上色时去掉 [[高亮]]（色带与框色打架），与 SVG 模式规则一致；
+            # 工程族**没有填色**，那两个色带照画不误，所以这里要按族判而不是按 fill 判
+            plain = bool(fill) and family() == "paper"
             _reg_slot(x0 + 36, y + 8, col_w - 84, bh - 16,
-                      strip_hl(text) if f not in (None, "none") else text,
+                      strip_hl(text) if plain else text,
                       34, clamp=2, min_size=16)
         if cfg.get("note"):
             ny = note_baseline(box_y + box_h + 56, 34, 2)
@@ -1295,13 +1840,13 @@ def layout_arch(card, seed):
     bx = BOX_INSET
     parts = [defs("a0")]
     hw = 446
-    parts.append(pen_box(bx, 16, hw, 380, 3, PAL.get(card.get("host_fill"))))
+    parts.append(node_box(bx, 16, hw, 380, 3, PAL.get(card.get("host_fill")), rail=False))
     if card.get("host_label"):
         parts.append(hl_line(bx + hw / 2, 74, parse_hl(card["host_label"], pal), 42, 21, maxw=hw - 30))
     for i, sub in enumerate(card.get("inner", [])):
         x = bx + 26 + i * 210
-        parts.append(pen_box(x, 168, 190, 190, i * 10 + 13,
-                             PAL.get(sub.get("fill")) or pal.next()))
+        parts.append(node_box(x, 168, 190, 190, i * 10 + 13,
+                              pick_fill(sub.get("fill"), pal)))
         parts.append(txt(x + 95, 232, strip_hl(sub.get("text", "")), 44))
         if sub.get("desc"):
             parts.append(txt(x + 95, 296, strip_hl(sub["desc"]), 24, fill=C_TEXT,
@@ -1315,8 +1860,8 @@ def layout_arch(card, seed):
     sw = 246
     sx = W_INNER - bx - sw
     if card.get("server"):
-        parts.append(pen_box(sx, 130, sw, 200, 33, PAL.get(card.get("server_fill"))
-                             or pal.next()))
+        parts.append(node_box(sx, 130, sw, 200, 33,
+                              PAL.get(card.get("server_fill")) or pal.next()))
         parts.append(txt(sx + sw / 2, 208, strip_hl(card["server"]), 48))
         if card.get("server_desc"):
             parts.append(txt(sx + sw / 2, 268, strip_hl(card["server_desc"]),
@@ -1330,8 +1875,8 @@ def layout_arch(card, seed):
         w = (W_INNER - 2 * bx - (n - 1) * 30) // n
         for i, c in enumerate(chips):
             x = bx + i * (w + 30)
-            parts.append(pen_box(x, 560, w, 170, i * 11 + 7,
-                                 PAL.get(c.get("fill")) or pal.next()))
+            parts.append(node_box(x, 560, w, 170, i * 11 + 7,
+                                  pick_fill(c.get("fill"), pal)))
             parts.append(txt(x + w / 2, 636, strip_hl(c.get("text", "")), 44))
             if c.get("desc"):
                 parts.append(txt(x + w / 2, 692, strip_hl(c["desc"]), 30, fill=C_TEXT,
@@ -1370,10 +1915,11 @@ def layout_matrix(card, seed):
     for i, c in enumerate(cells[:4]):
         x = bx + (i % 2) * (cw + gap)
         y = top + (i // 2) * (ch + gap)
-        fill = PAL.get(c.get("fill")) or pal.next()
-        parts.append(pen_box(x, y, cw, ch, i * 17 + 5, fill))
+        fill = pick_fill(c.get("fill"), pal)
+        parts.append(node_box(x, y, cw, ch, i * 17 + 5, fill))
         parts.append(hl_line(x + cw / 2, y + 96,
-                             parse_hl(c.get("head", ""), pal, plain=True), 44,
+                             parse_hl(c.get("head", ""), pal,
+                                      plain=fill_plain(fill)), 44,
                              seed + i * 9, maxw=cw - 40))
         if c.get("desc"):
             parts.append(txt_block(x + cw / 2, y + 168, strip_hl(c["desc"]),
@@ -1437,9 +1983,8 @@ def layout_pyramid(card, seed):
         r_b = min_r + (1 - min_r) * (i + 1) / float(n)
         pts = [(cx - hw * r_t, y), (cx + hw * r_t, y),
                (cx + hw * r_b, y + th), (cx - hw * r_b, y + th)]
-        fill = PAL.get(lv.get("fill")) or pal.next()
-        parts.append(_poly_fill(pts, i * 19 + 5, 1.6, fill))
-        parts.append(pen_path(pen_poly(pts, i * 19 + 5)))
+        fill = pick_fill(lv.get("fill"), pal)
+        parts.append(node_poly(pts, i * 19 + 5, fill))
         size = int(card.get("fs") or max(28, min(48, th * 0.40)))
         if lv.get("desc"):
             parts.append(hl_line(cx, y + th * 0.42, parse_hl(lv.get("text", ""), pal,
@@ -1494,10 +2039,17 @@ LAYOUTS = {
     "matrix": layout_matrix,
     "pyramid": layout_pyramid,
     "raw": layout_raw,
+    "cover_title": layout_cover_title,
+    "cover_quote": layout_cover_quote,
 }
 
 
 # ---------------------------------------------------------------- 页面装配
+# ★ 带 % 的是主题可覆盖的钩子，具体值在 render_card 里按当前主题替换：
+#   %RADIUS% 方框圆角 / %RADIUS_R% 卡片圆角 / %SHADOW% 卡片投影 /
+#   %ROW_BORDER% bullets 行边框宽度 / %C_FOOT% 页脚色 / %HL_CSS% 高亮形态 /
+#   %THEME_CSS% 主题额外 CSS（网格底纹之类）。
+#   ★ 圆角值只在**画墨迹时**是死的（SVG 里由 hrect_path 决定），这里管的是 HTML 侧。
 CSS = """
 @font-face{font-family:'KuaiLe';src:url('%FONT%') format('truetype');font-display:block;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -1508,30 +2060,19 @@ body{width:%WPAGE%px;height:%HPAGE%px;margin:0;background:%BG_PAGE%;
       display:flex;flex-direction:column;}
 .frame{position:absolute;left:0;top:0;pointer-events:none;z-index:9;}
 .deco{position:absolute;left:0;top:0;pointer-events:none;z-index:0;}
-.card.round{border-radius:28px;box-shadow:0 6px 26px rgba(0,0,0,.07);}
-.card.square{border-radius:8px;}
-.card.plain{background:%BG_CARD%;}
+.card.round{border-radius:%RADIUS_R%px;box-shadow:%SHADOW%;}
+.card.square{border-radius:%RADIUS%px;}
+/* ★ 只能写 background-color：写 background 简写会把主题的网格底纹一起清掉 */
+.card.plain{background-color:%BG_CARD%;}
 h1{font-size:%H1%px;line-height:1.14;text-align:center;color:%C_HEAD%;font-weight:800;
    letter-spacing:-1.5px;}
 .sub{font-size:%SUB%px;line-height:1.25;text-align:center;color:%C_TEXT%;font-weight:600;
      margin-top:24px;letter-spacing:-1px;}
 .stage{margin-top:44px;display:block;flex:0 0 auto;}
-.hl{position:relative;display:inline-block;padding:7px 12px;z-index:0;font-weight:700;}
-.hl::before{content:'';position:absolute;left:-6px;right:-6px;top:14%;bottom:-4%;z-index:-1;
-  border-radius:4px 8px 5px 9px;transform:rotate(-.8deg);
-  background-image:
-    repeating-linear-gradient(-1.6deg, rgba(255,255,255,0) 0 5px, rgba(110,100,70,.10) 5px 8px),
-    repeating-linear-gradient(1.1deg, rgba(255,255,255,0) 0 9px, rgba(255,255,255,.20) 9px 13px);}
-.hl.y::before{background-color:%PAL_Y%}
-.hl.b::before{background-color:%PAL_B%}
-.hl.p::before{background-color:%PAL_P%}
-.hl.g::before{background-color:%PAL_G%}
-.hl.gr::before{background-color:%PAL_GR%}
-.hl.o::before{background-color:%PAL_O%}
 .bullets{margin-top:12px;flex:1 1 auto;min-height:0;
      display:flex;flex-direction:column;justify-content:space-between;
      gap:22px;}
-.row{border:5.6px solid %INK%;border-radius:16px 20px 17px 21px;
+.row{position:relative;border:%ROW_BORDER%px solid %ROW_LINE%;border-radius:16px 20px 17px 21px;
      padding:16px 40px;min-height:0;flex:1 1 0;
      display:flex;flex-direction:column;justify-content:center;}
 .row .head{font-size:%ROW_HEAD%px;line-height:1.35;color:%C_HEAD%;font-weight:700;
@@ -1539,26 +2080,43 @@ h1{font-size:%H1%px;line-height:1.14;text-align:center;color:%C_HEAD%;font-weigh
 .row .no{margin-right:16px;}
 .row .desc{font-size:38px;line-height:1.5;color:%C_TEXT%;margin-top:12px;}
 .foot{position:absolute;left:0;right:0;bottom:44px;text-align:center;
-      font-family:%FONT_EMOJI%,'KuaiLe',%FONT_SANS%;font-size:30px;color:#9A9A96;}
+      font-family:%FONT_EMOJI%,'KuaiLe',%FONT_SANS%;font-size:30px;color:%C_FOOT%;}
 """
 
-# 用户要求：删掉一种齿轮（gear2f1），新增蓝色云朵
+# 用户要求：删掉一种齿轮（gear2f1），新增蓝色云朵；主题可选自己的装饰件组合
 DECO_VARIANTS = ["gear1", "gear2", "gear2f2", "star4", "star5", "star5f", "cloud"]
-DECO_SLOTS = [[(952, 64), (958, 692), (58, 1248)],
-              [(46, 64), (958, 692), (948, 1248)]]
+DECO_SLOTS = [[(952, 64), (958, 692), (46, 1248)],
+              [(46, 64), (958, 692), (952, 1248)]]
+# ★ 装饰件的半径上限：内容区两侧各只有 PAD_X(=92)px 的留白带，
+#   x=46/958 两列正好是这两条带的中线。半径超过 40 就会探进正文 ——
+#   实测终端主题的十字准星会压到页脚注释上（参考图那种大号像素标记尤其明显）。
+DECO_MAX_R = 40.0
 
 
 def _deco_layer(idx):
-    from decor import decor
+    """装饰层：零件清单由主题给（`THEME["decos"]` 为空 = 这套皮肤不画装饰）。
+
+    `corners` 是**整卡**零件（四个卡角各一个取景框角），不占单点槽位 ——
+    实测把它当普通零件摆在侧边留白带上，看着就是一个莫名其妙的方框。
+    """
+    from decor import decor, set_style, card_corners
+    variants = THEME.get("decos") or []
+    if not variants:
+        return ""
+    set_style(INK, WOBBLE, SW_SCALE)
     parts = ["<svg class='deco' width='%d' height='%d' viewBox='0 0 %d %d' "
              "xmlns='http://www.w3.org/2000/svg'>" % (W_CARD, H_CARD, W_CARD, H_CARD)]
-    nv = len(DECO_VARIANTS)
-    variants = [DECO_VARIANTS[(idx * 1) % nv], DECO_VARIANTS[(idx * 2 + 3) % nv],
-                DECO_VARIANTS[(idx * 3 + 5) % nv]]
+    if "corners" in variants:
+        parts.append(card_corners(W_CARD, H_CARD, 34.0, 0.40))
+        variants = [v for v in variants if v != "corners"]
+    nv = len(variants)
+    picks = [variants[(idx * 1) % nv], variants[(idx * 2 + 1) % nv], variants[(idx * 3 + 2) % nv]]
     slots = DECO_SLOTS[idx % 2]
-    for i, (name, (x, y)) in enumerate(zip(variants, slots)):
-        size = (24, 27, 30)[i]          # 用户要求：装饰小一点（原 30/34/38）
+    dsc = float(THEME.get("deco_scale") or 1.0)
+    for i, (name, (x, y)) in enumerate(zip(picks, slots)):
+        size = (24, 27, 30)[i] * dsc       # 用户要求：装饰小一点（原 30/34/38）
         pair = name.startswith("gear2")
+        size = min(size, DECO_MAX_R / 2.4 if pair else DECO_MAX_R)
         if pair:
             x -= size * 1.05
         lo, hi = 30 + size * 1.05, W_CARD - 32 - (size * 1.25 if pair else size)
@@ -1572,11 +2130,20 @@ def _deco_layer(idx):
 
 
 def render_card(card, idx, total, meta, font_url):
-    """把一张卡的规格渲染成完整 HTML。"""
+    """把一张卡的规格渲染成完整 HTML。
+
+    ★ 第一件事就是 use_theme：主题是**模块全局**，必须先换好皮肤再调版式函数，
+      否则版式里读到的还是上一张卡的主题色（跨主题连续渲染时表现为"第二张开始串味"）。
+    """
     layout = card.get("layout", "bullets")
     if layout not in LAYOUTS:
         raise ValueError("unknown layout: %s（可用：%s）" % (layout, ", ".join(LAYOUTS)))
-    frames = meta.get("frame") or ["pen"]      # 空列表/None 都回落到默认，别让取模崩
+    tname = meta.get("theme")
+    if tname is not None and str(tname).strip() not in _theme.THEMES:
+        raise ValueError("未知主题 %r（可用：%s）" % (tname, ", ".join(_theme.names())))
+    T = use_theme(tname)
+    # 外框默认值跟着主题走：终端/野兽派套一个手绘外框会自相矛盾
+    frames = meta.get("frame") or [T.get("frame") or "pen"]
     if isinstance(frames, str):
         frames = [frames]
     kind = card.get("frame") or frames[idx % len(frames)]
@@ -1594,20 +2161,23 @@ def render_card(card, idx, total, meta, font_url):
         # 与 stage 同一坐标系（stagewrap 相对定位 → slots 覆盖在上面）
         items = []
         for s in _SLOTS:
-            cls = "s left" if s["align"] == "left" else "s"
+            cls = {"left": "s left", "right": "s right"}.get(s["align"], "s")
             wgt = "font-weight:%s;" % s["weight"] if s["weight"] else ""
+            col = s.get("color") or _auto_slot_color(s)
+            col = "color:%s;" % col if col else ""
             items.append(
                 "<div class='%s' style='left:%.1fpx;top:%.1fpx;width:%.1fpx;height:%.1fpx;"
                 "--clamp:%d'>"
-                "<div class='t' data-min='%d' style='font-size:%dpx;%s'>%s</div></div>"
+                "<div class='t' data-min='%d' style='font-size:%dpx;%s%s'>%s</div></div>"
                 % (cls, s["x"], s["y"], s["w"], s["h"], s["clamp"], s["min"], s["size"],
-                   wgt, _inline(s["text"])))
+                   wgt, col, _inline(s["text"])))
         dom_slots = "<div class='slots'>%s</div>" % "".join(items)
         dom_js = DOM_AUTOFIT_JS
         _reg_text(" ".join(s["text"] for s in _SLOTS))      # 内容门照样登记
         body = "<div class='stagewrap'>%s%s</div>" % (body, dom_slots)
-    sub = _sub(card.get("subtitle", ""))
-    h1 = h1_html(card.get("title", ""))
+    sub = "" if layout in HEADERLESS else _sub(card.get("subtitle", ""))
+    # 标题封面（cover_title / cover_quote）自己把标题画进 stage —— 页头再画一遍就重复了
+    h1 = "" if layout in HEADERLESS else h1_html(card.get("title", ""))
     foot = meta.get("footer", "")
     foot_html = ""
     if foot:
@@ -1628,15 +2198,27 @@ def render_card(card, idx, total, meta, font_url):
             ("%SUB%", str(SIZES["sub"])), ("%ROW_HEAD%", "48"),
             ("%PAL_Y%", PAL["yellow"]), ("%PAL_B%", PAL["blue"]),
             ("%PAL_P%", PAL["pink"]), ("%PAL_G%", PAL["gray"]),
-            ("%PAL_GR%", PAL["green"]), ("%PAL_O%", PAL["orange"])]
-    css = CSS
-    for k, v in repl:
-        css = css.replace(k, v)
-    if _SLOTS:                       # DOM 文字模式的样式（占位符与主 CSS 同一套替换）
-        _dcss = DOM_SLOT_CSS
+            ("%PAL_GR%", PAL["green"]), ("%PAL_O%", PAL["orange"]),
+            # 主题钩子
+            ("%RADIUS%", str(T["radius"])), ("%RADIUS_R%", str(T["radius_round"])),
+            ("%SHADOW%", T["shadow"]), ("%C_FOOT%", T["foot"]),
+            ("%ROW_BORDER%", "%g" % T["row_border"]), ("%HL_INK%", T["hl_ink"]),
+            ("%HL_ALPHA%", "%g" % T["hl_alpha"]),
+            # ★ bullets 行的边框色：纸张族用墨迹色（手绘暖灰），工程族用节点描边色 ——
+            #   用荧光绿描一整圈 row 边框会非常吵
+            ("%ROW_LINE%", (T.get("node_line") if T.get("family") == "diagram"
+                            else None) or INK)]
+
+    def _fill(s):
         for k, v in repl:
-            _dcss = _dcss.replace(k, v)
-        css += _dcss
+            s = s.replace(k, v)
+        return s
+
+    css = _fill(CSS)
+    css += _fill(_theme.HL_STYLES[T["hl"]] + _theme.HL_COLORS)
+    css += _fill(T["css"])
+    if _SLOTS:                       # DOM 文字模式的样式（占位符与主 CSS 同一套替换）
+        css += _fill(DOM_SLOT_CSS)
 
     # ★ manifest 必须最后算：上面每个渲染函数都会 _reg_text 登记文字，
     # 早算一步就漏掉后发生的那批（踩过：算在 _sub 之前 → 副标题没进清单，

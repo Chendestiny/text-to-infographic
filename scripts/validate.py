@@ -42,15 +42,22 @@ SERIES_HINT = 13           # 到这儿就该拆成系列，而不是继续加页
 #   内容门只比对"渲染器登记过的文字" → 无从比对。结果是三道全绿、内容已在图上消失。
 # 真实事故：5 份示例的序号字段全写成 "false"（YAML 1.1 把裸 no 当布尔假，dump 成 JSON
 # 就成了 "false"），① ② ③ 从来没渲染出来过，没有任何一道门报警。
-NOTE_LAYOUTS = {"arch", "chain", "cover", "flow", "hub", "matrix", "pyramid",
-                "spectrum", "timeline"}      # 真的读 card["note"] 的版式（扫 ink.py 实测）
+NOTE_LAYOUTS = {"arch", "chain", "cover", "cover_title", "cover_quote", "flow", "hub",
+                "matrix", "pyramid", "spectrum", "timeline"}   # 真的读 card["note"] 的版式
 ENGINE_KEYS = {"layout", "frame", "dashed", "dashed_label", "svg", "fs", "fs2",
                "gradient", "color", "fill", "no", "mini", "line", "chips",
                "text", "desc", "big", "en", "tag", "head", "each"}
 
 
 def eff_len(text):
-    """有效字数：汉字 1 + 其他 0.5；高亮标记剥离后计。"""
+    """有效字数：汉字 1 + 其他 0.5；高亮标记剥离后计。
+
+    ★ 非字符串一律返回 0：`accent: 2` 这种**数字字段**也写在契约里（好让未知字段
+    检查放行），如果这里直接对 int 跑 re.sub，整道规格门会以 TypeError 崩掉 ——
+    而 run.py 只看"有没有结论行"，崩掉就落进"有提示，见上"，等于门又白跑了。
+    """
+    if not isinstance(text, str):
+        return 0
     s = HL_RE.sub(lambda m: m.group(1), text or "")
     cjk = sum(1 for c in s if ord(c) > 0x2E80)
     return cjk + (len(s) - cjk) * 0.5
@@ -87,6 +94,8 @@ def _check_slot(path, value, rule, issues, warnings):
                 fv = item.get(fk) if isinstance(item, dict) else item
                 _check_slot("%s[%d].%s" % (path, i, fk), fv, fr, issues, warnings)
         return
+    if not isinstance(v, str):
+        return                      # 数字/布尔字段没有"字数"可谈（见 eff_len 的注释）
     n = eff_len(v)
     lo = rule.get("min") if isinstance(rule, dict) else None
     hi = rule.get("max") if isinstance(rule, dict) else None

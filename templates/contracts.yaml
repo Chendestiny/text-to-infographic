@@ -141,6 +141,35 @@ layouts:
           fields:
             each:
               max: 6
+  # 标题封面：整页一句话，用 \n 手动断行（自动折行会把词组切散）
+  cover_title:
+    title:
+      min: 4
+      max: 26
+      lines: 4
+    accent:
+      max: 2
+    kicker:
+      max: 10
+    subtitle:
+      max: 16
+    note:
+      max: 30
+      soft: true
+  # 金句封面：整页一句最锋利的结论 + 出处
+  cover_quote:
+    quote:
+      min: 6
+      max: 44
+    title:
+      max: 44
+    source:
+      max: 16
+    kicker:
+      max: 10
+    note:
+      max: 30
+      soft: true
   cycle:
     title:
       min: 3

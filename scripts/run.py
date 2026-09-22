@@ -66,7 +66,7 @@ def run(script, *args, **kw):
     return (p.stdout or "") + (p.stderr or ""), p.returncode
 
 
-def rework(spec, only, out):
+def rework(spec, only, out, theme=None):
     """单页返工：只重建 / 重测 / 重出第 only 页，其它页的 HTML 与 PNG 原样不动。
 
     为什么需要（用户提的人在回路）：整套 8 张里只有 1 张不满意时，
@@ -85,7 +85,8 @@ def rework(spec, only, out):
         hard.append("规格门｜validate.py 未跑完（exit=%d）：%s"
                     % (rc, (o.strip().splitlines() or [""])[-1][:110]))
 
-    o, rc = run("pipeline.py", spec, "-o", out, "--only", only)
+    extra = ["--theme", theme] if theme else []
+    o, rc = run("pipeline.py", spec, "-o", out, "--only", only, *extra)
     for l in o.splitlines():
         s = l.strip()
         if s.startswith(("build:", "measure:", "verify:", "render:", "耗时", "✗")):
@@ -123,6 +124,7 @@ def main():
     ap.add_argument("--no-render", action="store_true", help="只过门不出图（写规格阶段用）")
     ap.add_argument("--only", type=int, metavar="N",
                     help="只重做第 N 页（1 起）：改完某页文案后用它，秒级出图、不动其它页")
+    ap.add_argument("--theme", help="覆盖 meta.theme（皮肤 key，见 scripts/theme.py --list）")
     a = ap.parse_args()
 
     if a.plan:                      # 规划模式：一条命令入口收敛到 run.py
@@ -130,12 +132,13 @@ def main():
         print(o.rstrip())
         return 0
     if not a.spec:
-        print("用法：run.py <spec.json> [--article 文章.md] [--out 目录] | run.py --plan 文章.md")
+        print("用法：run.py <spec.json> [--article 文章.md] [--out 目录] [--theme 皮肤] "
+              "| run.py --plan 文章.md")
         return 2
     spec = os.path.abspath(a.spec)
     out = a.out or os.path.dirname(spec)
     if a.only:
-        return rework(spec, a.only, out)
+        return rework(spec, a.only, out, a.theme)
     hard, soft = [], []
     pipe_out = ""               # ★ --no-render 时不会跑 pipeline，先给它一个空值
 
@@ -190,13 +193,14 @@ def main():
         print("④ 像素门   （--no-render：跳过出图与实测）")
         pipe_out = o = ""
     else:
-        o, rc_pipe = run("pipeline.py", spec, "-o", out)
+        _extra = ["--theme", a.theme] if a.theme else []
+        o, rc_pipe = run("pipeline.py", spec, "-o", out, *_extra)
         if rc_pipe != 0 and "measure:" not in o:
             # ★ 崩溃/超时**重试一次**：渲染要碰浏览器和文件系统，偶发失败很常见
             #   （Chrome 冷启动慢、profile 被占、杀软正在扫刚写出的 PNG）——
             #   实测这类抖动是"卡壳"的主要来源，重试一次能救回大部分。
             print("   ↻ 像素门第一次没跑完，自动重试一次…")
-            o2, rc2 = run("pipeline.py", spec, "-o", out)
+            o2, rc2 = run("pipeline.py", spec, "-o", out, *_extra)
             if "measure:" in o2 or rc2 == 0:
                 o, rc_pipe = o2, rc2
         pipe_out = o                      # ★ 后面 o 会被 review_sheet 覆盖，先存一份

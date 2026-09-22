@@ -232,7 +232,8 @@ def node_render(state):
 
 
 # ---------------------------------------------------------------- 图
-def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True, only=None):
+def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True, only=None,
+        theme=None):
     t0 = time.perf_counter()
     state = {
         "spec": spec_path, "meta": {}, "calib": 1.0, "issues": {}, "degraded": {},
@@ -252,6 +253,8 @@ def run(spec_path, out_dir, frame=None, no_decor=False, verbose=True, only=None)
     meta = dict(spec.get("meta") or {})
     if frame:
         meta["frame"] = [frame]
+    if theme:                       # 命令行覆盖皮肤：规格里写了也压过去（命令行更靠后）
+        meta["theme"] = theme
     if no_decor:
         meta["decor"] = False
     state["meta"] = meta
@@ -328,12 +331,13 @@ if __name__ == "__main__":
     ap.add_argument("spec")
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--frame", choices=["pen", "card", "none"])
+    ap.add_argument("--theme", help="覆盖 meta.theme（皮肤 key，见 scripts/theme.py）")
     ap.add_argument("--no-decor", action="store_true")
     ap.add_argument("--only", type=int, metavar="N",
                     help="只重做第 N 页（1 起）：单页返工用，秒级出图、不动其它页")
     args = ap.parse_args()
     st = run(args.spec, args.out, frame=args.frame, no_decor=args.no_decor,
-             only=args.only)
+             only=args.only, theme=args.theme)
     print("\n耗时 %.1fs" % st["seconds"])
     # ★ 退出码必须反映"这份稿能不能交付"，不能只反映"我有没有崩"。
     #   原来只有渲染失败才非零；**有硬问题（needs_llm）时照样 exit=0** ——

@@ -16,6 +16,7 @@
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -203,6 +204,10 @@ LAYOUT_CARDS = {
     "cover": {"layout": "cover", "title": "T", "subtitle": "S",
               "quads": [{"label": "L", "mini": "steps",
                          "items": [{"text": "A"}, {"text": "B"}, {"text": "C"}]}]},
+    "cover_title": {"layout": "cover_title", "title": "第一行\n第二行\n第三行",
+                    "kicker": "标签", "subtitle": "支撑句"},
+    "cover_quote": {"layout": "cover_quote", "quote": "把结论写在第一页",
+                    "source": "出处"},
     "hub": {"layout": "hub", "title": "T", "hub": "H",
             "items": [{"big": "A", "en": "a"}, {"big": "B", "en": "b"}]},
     "chain": {"layout": "chain", "title": "T",
@@ -270,7 +275,255 @@ class TestLayoutSmoke(Base):
                         "写了不渲染的字段应该被点名：\n%s" % o[-800:])
 
 
-# ─────────────────────────────── 6. 可靠性兜底底
+# ─────────────────────────────── 6. 版式级反例
+class TestCounterExamples(unittest.TestCase):
+    """压框 / 压线 / 劈词。
+
+    压框压线靠真实渲染很难稳定造出来（得先让浏览器真的把字放偏），
+    所以这里直接给 `measure.analyze()` 喂合成的测量报告 —— 不启浏览器，
+    于是每条都是确定性的、也就跑得动。
+    """
+
+    @staticmethod
+    def _analyze(slots, ink):
+        import measure
+        rep = {"stage": {"w": 824, "h": 900}, "svg": [], "html": [],
+               "slots": slots,
+               "text": " ".join(s.get("text", "") for s in slots)}
+        return measure.analyze(rep, boxes=None, texts=None, ink=ink)
+
+    @staticmethod
+    def _slot(text="文案", left=100, top=100, w=300, h=60):
+        return {"left": left, "top": top, "w": w, "h": h, "sh": h,
+                "text": text}
+
+    def test_dom_text_crossing_a_line_is_caught(self):
+        kinds = [i["kind"] for i in self._analyze(
+            [self._slot("压住线的文字")],
+            [{"kind": "line", "x": 110, "y": 110, "w": 280, "h": 40}])]
+        self.assertIn("crosses-line", kinds)
+
+    def test_dom_text_crossing_a_box_is_caught(self):
+        # 穿框的判据不是"有重叠"，而是"文字从框内**纵向扎出底边**"——
+        # 文字完整落在框里是正常的（色块本来就在字底下），只有扎出去才算。
+        # 所以这里让文字起点在框内、底边越过框底 20px。
+        kinds = [i["kind"] for i in self._analyze(
+            [self._slot("扎出框底的文字", top=180, h=60)],
+            [{"kind": "box", "x": 100, "y": 120, "w": 300, "h": 100}])]
+        self.assertIn("crosses-box", kinds)
+
+    def test_no_overlap_means_no_issue(self):
+        """反向用例：不重叠就不该报 —— 防止上面两条变成"永远报"。"""
+        self.assertEqual(self._analyze(
+            [self._slot("安分的文字", w=100, h=40)],
+            [{"kind": "line", "x": 600, "y": 700, "w": 10, "h": 10}]), [])
+
+    def test_css_never_splits_inside_a_word(self):
+        """劈词（断词）：DOM 侧靠 CSS 保证，**不是门检出来的**。
+
+        所以一旦有人把 `word-break` 改成 break-all / anywhere，
+        四道门一声不响，整批图却开始劈词 —— 这类回归只能靠守住那条 CSS。
+        """
+        css = io.open(os.path.join(SCRIPTS, "ink.py"), encoding="utf-8").read()
+        self.assertIn("overflow-wrap: break-word", css,
+                      "缺 overflow-wrap: break-word，长词会顶破容器")
+        self.assertIn("word-break: normal", css,
+                      "缺 word-break: normal，拉丁词可能被从中间劈开")
+        self.assertNotIn("word-break: break-all", css,
+                         "break-all 会在词内断行（劈词）")
+        self.assertNotIn("overflow-wrap: anywhere", css,
+                         "anywhere 会在词内断行（劈词）")
+
+
+# ─────────────────────────────── 7. 主题（皮肤）
+class TestTheme(unittest.TestCase):
+    """守：一套令牌换掉全部像素 —— 不能只换一半。
+
+    主题最容易出的失效是"换了一半"：颜色换了、笔锋没换（深色主题配手绘抖线），
+    或者文字色没跟着底色走（深色主题的白字压在亮黄块上）。
+    这几种都不会让任何一道门报警，只会让图变丑，所以只能靠单测钉住。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, SCRIPTS)
+        import ink  # noqa: F401
+
+    def setUp(self):
+        import ink
+        self.ink = ink
+
+    def test_every_theme_applies_its_tokens(self):
+        import theme
+        for k in theme.names():
+            t = self.ink.use_theme(k)
+            self.assertEqual(self.ink.INK, t["ink"], k)
+            self.assertEqual(self.ink.BG_CARD, t["bg_card"], k)
+            self.assertEqual(self.ink.PAL, t["pal"], k)
+            self.assertEqual(self.ink.WOBBLE, t["wobble"], k)
+        self.ink.use_theme(theme.DEFAULT)          # 别把默认皮肤留在别人身上
+
+    def test_zero_wobble_means_a_straight_line(self):
+        """守：`wobble: 0` 必须真的产出直线。
+
+        判据是「边的段数」：手绘边是 1 段主线 + 3 段收笔 = 4 段，
+        几何边收成 1 段。段数不变就说明主题没作用到墨迹上。
+        """
+        self.ink.use_theme("crayon")
+        self.assertGreater(len(self.ink.pen_rect(10, 10, 100, 50, 1)), 4)
+        self.ink.use_theme("terminal")
+        self.assertEqual(len(self.ink.pen_rect(10, 10, 100, 50, 1)), 4)
+        # 直线段里不该出现偏离端点的坐标
+        d = self.ink.pen_rect(10, 10, 100, 50, 1)[0][0]
+        self.assertIn("M", d)
+        self.assertEqual(d, "M10.0 10.0 L110.0 10.0")
+
+    def test_unknown_theme_raises_instead_of_falling_back(self):
+        """守：主题名写错要当场报错。
+
+        静默回落成默认皮肤的表现是"这个主题好像没生效"，比报错难查得多。
+        """
+        with self.assertRaises(KeyError):
+            self.ink.use_theme("no-such-theme")
+        with self.assertRaises(ValueError):
+            self.ink.render_card({"layout": "bullets", "title": "T"}, 0, 1,
+                                 {"theme": "no-such-theme"}, "file:///x.ttf")
+
+    def test_dom_slot_align_is_normalised(self):
+        """踩坑：render_card 用 `align == "left"` 判，而 txt()/hl_line() 传的是
+        `"start"` —— 两边永远不相等，于是**所有左右对齐的槽一直是居中渲染的**
+        （spectrum 两端标签、matrix 轴标签都在其中）。
+        """
+        self.ink._SLOTS.clear()
+        for a in ("start", "left", "end", "right", "middle", "center"):
+            self.ink._reg_slot(0, 0, 100, 40, "x", 20, align=a)
+        self.assertEqual([s["align"] for s in self.ink._SLOTS],
+                         ["left", "left", "right", "right", "center", "center"])
+
+    def test_text_on_a_colored_box_gets_contrast(self):
+        """守：文字色要跟着**填充色亮度**走，不是跟着"主题深不深"走。
+
+        踩坑：终端主题的浅灰正文压在亮黄/青/粉块上完全读不出来。
+        """
+        self.ink.use_theme("terminal")
+        self.ink._BOXES.clear()
+        self.ink.pen_box(0, 0, 800, 120, 1, "#FFC94D")       # 亮填充 → 深字
+        self.ink._SLOTS.clear()
+        self.ink._reg_slot(20, 20, 700, 80, "文字", 48)
+        self.assertEqual(self.ink._auto_slot_color(self.ink._SLOTS[0]), "#0B1220")
+        self.ink._BOXES.clear()
+        self.ink.pen_box(0, 0, 800, 120, 1, "#56637F")       # 暗填充 → 浅字
+        self.ink._SLOTS.clear()
+        self.ink._reg_slot(20, 20, 700, 80, "文字", 48)
+        self.assertEqual(self.ink._auto_slot_color(self.ink._SLOTS[0]), "#C6D2E6")
+
+    def test_theme_css_and_hl_shape_reach_the_page(self):
+        """守：主题的额外 CSS（网格底纹）与高亮形态要真的进 HTML。"""
+        html = self.ink.render_card({"layout": "bullets", "title": "T",
+                                     "items": [{"head": "H"}]},
+                                    0, 1, {"theme": "terminal"}, "file:///x.ttf")
+        self.assertIn("background-size:72px 72px", html, "终端主题的网格底纹没进页面")
+        self.assertIn(".hl::before", html, "高亮形态的 CSS 没进页面")
+        self.assertNotIn("%RADIUS%", html, "主题占位符没被替换干净")
+
+    def test_every_hl_class_has_a_css_rule(self):
+        """守：`[[词]]` 渲染出来的 class 必须真的命中一条 CSS 规则。
+
+        踩坑（潜伏很久，四道门全都没响）：`_inline` 把 `gr` 通过 COLOR_KEY
+        映射成**颜色名** `green` 塞进 class，而 CSS 里只定义了 `.hl.gr` ——
+        于是 `[[词|gr]]` 和 `hl_line` 重建出来的**所有非默认色高亮一直是透明的**。
+        文字在、位置对、不压线，只是没颜色，所以内容门与几何门都抓不到。
+        """
+        html = self.ink.render_card(
+            {"layout": "spectrum", "title": "T", "stages": ["一", "二"],
+             "ends": ["左", "右"],
+             "items": [{"text": "用 [[甲]]"}, {"text": "用 [[乙]]"}, {"text": "用 [[丙]]"}]},
+            0, 1, {}, "file:///x.ttf")
+        classes = set(re.findall(r"<span class='hl ([a-z]+)'>", html))
+        self.assertTrue(classes, "这一个都没画出高亮，用例本身失效了")
+        for c in classes:
+            self.assertIn(".hl.%s::before" % c, html,
+                          "class %r 没有对应的 CSS 规则（底色会静默变透明）" % c)
+
+    def test_two_families_draw_nodes_differently(self):
+        """守：**族**决定节点怎么画 —— 工程族绝不填色。
+
+        用户口径：工程风「框的背景透明（和底色一致）、边框黑色或主题色、没有笔锋笔触」，
+        高饱和方框填色在这一族里是不成立的。所以这条测试盯的是节点原语本身：
+        纸张族 = 整块填色；工程族 = 透明 + 主题色细描边 + 一处强调。
+        """
+        self.ink.use_theme("crayon")
+        paper = self.ink.node_box(0, 0, 800, 120, 1, "#FFE04D")
+        self.assertIn("fill='#FFE04D'", paper, "纸张族应该整块上色")
+        self.ink.use_theme("terminal")
+        diag = self.ink.node_box(0, 0, 800, 120, 1, "#FFC94D")
+        self.assertIn("fill='none'", diag, "工程族的节点必须是透明底（网格要能透进框里）")
+        self.assertIn("stroke='%s'" % self.ink.THEME["node_line"], diag,
+                      "工程族的描边要用主题色（node_line 默认 = ink）")
+        self.assertNotIn("width='800.0' height='120.0' rx='8.0' fill='#FFC94D'", diag,
+                         "强调色绝不能当整块填充")
+        marks = re.findall(r"<rect[^>]*fill='#FFC94D'[^>]*/>", diag)
+        st = self.ink.THEME["node_style"]
+        if st == "tab":
+            self.assertEqual(len(marks), 1, "角块方案只该有一枚标记：\n%s" % diag)
+            self.assertIn("width='%.1f'" % float(self.ink.THEME["tab_size"]), marks[0])
+        elif st == "rail":
+            self.assertEqual(len(marks), 1, "竖轨方案只该有一条轨：\n%s" % diag)
+            self.assertIn("width='%.1f'" % float(self.ink.THEME["rail_w"]), marks[0])
+        elif st in ("corner", "double"):
+            # 四角刻度 = 4 个角 × 2 段 = 8 段；双线框没有强调色（用描边色画内框）
+            self.assertTrue(marks or st == "double", "四角刻度应该画出色段：\n%s" % diag)
+        elif st in ("rule", "none"):
+            self.assertLessEqual(len(marks), 1, "这套方案不该有多处强调：\n%s" % diag)
+        else:
+            self.fail("node_style=%r 没被这条测试覆盖" % st)
+
+    def test_diagram_family_has_no_pen_flourish(self):
+        """守：工程族**没有笔锋笔触**（用户明确要求）。
+
+        判据：节点 SVG 里一条手绘 `<path>` 都不该有 —— `pen_rect` 那套
+        "一条边拆成 4 段收笔"全靠 `<path>`，出现就说明族的分派漏了。
+        """
+        import theme
+        for k in theme.names():
+            if theme.get(k)["family"] != "diagram":
+                continue
+            self.ink.use_theme(k)
+            svg = self.ink.node_box(0, 0, 800, 120, 1, "#FFC94D")
+            self.assertNotIn("<path", svg, "%s 的节点里出现了手绘 path：\n%s" % (k, svg))
+            self.assertIn("stroke-width='%.2f'" % float(self.ink.THEME["node_w"]), svg,
+                          "%s 的线宽没跟着 node_w 走（主题令牌没生效）" % k)
+
+    def test_fill_none_really_means_no_fill(self):
+        """踩坑：`fill: none` 落到 `PAL.get(x) or pal.next()` 上会**照样上色**，
+        和文档承诺的「留白表达这一步不重要」正好相反。三态必须显式判。
+        """
+        self.ink.use_theme("crayon")
+        pal = self.ink.Palette(0)
+        self.assertIsNone(self.ink.pick_fill("none", pal))
+        self.assertEqual(self.ink.pick_fill("yellow", pal), self.ink.PAL["yellow"])
+        self.assertEqual(self.ink.pick_fill(None, pal), self.ink.PAL[self.ink.PAL_ORDER[0]])
+
+    def test_family_defaults_and_membership(self):
+        import theme
+        for k in theme.names():
+            self.assertIn(theme.get(k)["family"], ("paper", "diagram"), k)
+        self.assertEqual(theme.get(theme.DEFAULT)["family"], "paper")
+        # 两个族都要有人，否则「族」这套机制等于没在用
+        fams = {theme.get(k)["family"] for k in theme.names()}
+        self.assertEqual(fams, {"paper", "diagram"})
+
+    def test_no_two_themes_share_a_palette(self):
+        """守：每套皮肤的调色板要真的不一样 —— 复制粘贴时最容易忘改调色板。"""
+        import theme
+        seen = {}
+        for k in theme.names():
+            sig = tuple(theme.get(k)["pal"][c] for c in theme.get(k)["order"])
+            self.assertNotIn(sig, seen, "%s 与 %s 调色板完全相同" % (k, seen.get(sig)))
+            seen[sig] = k
+
+
+# ─────────────────────────────── 8. 可靠性兜底
 class TestReliability(Base):
     """守：不挂死、不静默失败、不连累好图、单页返工不乱动。"""
 

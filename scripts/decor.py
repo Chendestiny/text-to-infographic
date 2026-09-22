@@ -35,7 +35,25 @@ CRAYON_GRAY = "#CFCBC0"
 CRAYON_YELLOW = "#FFE04D"
 CRAYON_BLUE = "#7FCBEF"      # 云朵：用户指定用蓝色涂
 
+# 主题钩子：ink.py 画装饰层之前会调 set_style()，把当前主题的墨迹色与抖动倍率塞进来。
+# ★ 装饰件也必须跟着主题走：深底上留一个暖灰齿轮，比不画还难看。
+AMP = 1.0                    # 抖动倍率（0 = 几何直线/正圆）
 _uid = [0]
+
+
+def set_style(ink=None, amp=None, sw=None):
+    """由 ink.py 在画装饰层前调用：换描边色 / 抖动倍率 / 线宽。
+
+    注意 `_shape(..., color=None)` 是**调用时**回落到 INK 的（不是 def 期绑定），
+    所以这里改 INK 立刻生效；写成 `color=INK` 那种默认参数就换不动了。
+    """
+    global INK, AMP, SW
+    if ink is not None:
+        INK = ink
+    if amp is not None:
+        AMP = float(amp)
+    if sw is not None:
+        SW = 6.0 * float(sw)
 
 
 def _nid():
@@ -49,11 +67,20 @@ def _rnd(seed):
 
 def _jk(pts, seed, amp):
     r = _rnd(seed)
-    return [(x + r.uniform(-amp, amp), y + r.uniform(-amp, amp)) for x, y in pts]
+    return [(x + r.uniform(-amp, amp) * AMP, y + r.uniform(-amp, amp) * AMP)
+            for x, y in pts]
 
 
-def _shape(pts, seed, amp, w=SW * 0.55, op=0.55, fill=None, color=INK):
-    """闭合手绘形状；fill 不为空时叠一层「蜡笔填充」（实色 + 白斜纹）。"""
+def _shape(pts, seed, amp, w=None, op=0.55, fill=None, color=None):
+    """闭合手绘形状；fill 不为空时叠一层「蜡笔填充」（实色 + 白斜纹）。
+
+    `color=None` 表示"用当前主题的墨迹色"，`w=None` 表示"跟随当前线宽"——
+    **不能写成 `color=INK`**：默认参数是 def 期绑定，主题换了也换不动。
+    """
+    if color is None:
+        color = INK
+    if w is None:
+        w = SW * 0.55
     j = _jk(pts, seed, amp)
     d = "M" + " L".join("%.1f %.1f" % q for q in j) + " Z"
     out = []
@@ -204,6 +231,104 @@ def cloud(x, y, size, seed=1, opacity=0.55):
     return _shape(pts, seed, size * 0.022, fill=CRAYON_BLUE, op=opacity)
 
 
+# ---------------------------------------------------------------- 极客系
+# 目标：深色工程风（终端 / 蓝图 / 北欧）的装饰件。这几种主题**抖动为 0**，
+# 所以零件本身必须就是几何图形，不能靠手绘抖动出效果。
+def _stroke(d, w, op):
+    return ("<path d='%s' fill='none' stroke='%s' stroke-width='%.2f' "
+            "stroke-opacity='%.2f' stroke-linecap='square'/>" % (d, INK, w, op))
+
+
+def plus3(x, y, size, seed=1, opacity=0.55):
+    """三个加号 · 像素风（参考图左上角那种 `+++`）。
+
+    加号必须**用 stroke-linecap:square**：圆头加号是"医疗十字"，
+    方头才是终端里那种字符感。
+    整体占一个 2×size 见方的盒子（和其它零件同一个口径，摆位才好预算）。
+    """
+    out = []
+    arm = size * 0.30
+    w = max(2.0, size * 0.15)
+    for i in (-1, 0, 1):
+        cx = x + i * size * 0.62
+        out.append(_stroke("M%.1f %.1f L%.1f %.1f" % (cx - arm, y, cx + arm, y), w, opacity))
+        out.append(_stroke("M%.1f %.1f L%.1f %.1f" % (cx, y - arm, cx, y + arm), w, opacity))
+    return "".join(out)
+
+
+# 5×7 点阵的「?」，1 = 点亮。手写点阵而不是用字体：
+# 字体渲染出来的问号是曲线，和"像素"这个语义正好相反。
+_PIXQ = ["01110",
+         "10001",
+         "00001",
+         "00010",
+         "00100",
+         "00000",
+         "00100"]
+
+
+def pixq(x, y, size, seed=1, opacity=0.62):
+    """像素问号 · 方块拼（参考图右下角那个）。
+
+    点阵宽 5 / 高 7 → 单格边长 = 2×size/7，整体以 (x, y) 为中心。
+    """
+    c = size * 2.0 / 7.0
+    x0 = x - 5 * c / 2.0
+    y0 = y - 7 * c / 2.0
+    gap = c * 0.10                       # 方块之间留缝，"像素"感全在这条缝上
+    out = []
+    for r, row in enumerate(_PIXQ):
+        for k, ch in enumerate(row):
+            if ch == "1":
+                out.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s' "
+                           "fill-opacity='%.2f'/>"
+                           % (x0 + k * c, y0 + r * c, c - gap, c - gap, INK, opacity))
+    return "".join(out)
+
+
+def crosshair(x, y, size, seed=1, opacity=0.5):
+    """十字准星：一个圆 + 四条伸出去的短线（蓝图/北欧用）。整体占 2×size。"""
+    r = size * 0.58
+    ext = size * 1.0
+    w = max(1.4, size * 0.075)
+    out = ["<circle cx='%.1f' cy='%.1f' r='%.1f' fill='none' stroke='%s' "
+           "stroke-width='%.2f' stroke-opacity='%.2f'/>" % (x, y, r, INK, w, opacity)]
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        out.append(_stroke("M%.1f %.1f L%.1f %.1f"
+                           % (x + dx * r * 1.15, y + dy * r * 1.15,
+                              x + dx * ext, y + dy * ext), w, opacity))
+    return "".join(out)
+
+
+def corners(x, y, size, seed=1, opacity=0.45):
+    """四角括线（取景框角）：四个 L 形，整体半宽 size。
+
+    单独用请走 `card_corners()` —— 这件是**整卡**零件，摆在侧边留白带上
+    只会看着像一个莫名其妙的方框（实测踩过）。
+    """
+    w = max(1.8, size * 0.085)
+    L = size * 0.85
+    out = []
+    for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        px, py = x + sx * size, y + sy * size
+        out.append(_stroke("M%.1f %.1f L%.1f %.1f L%.1f %.1f"
+                           % (px - sx * L, py, px, py, px, py - sy * L), w, opacity))
+    return "".join(out)
+
+
+def card_corners(w, h, size, opacity=0.4):
+    """整卡取景框：四个卡角各一个 L 形括线（蓝图/终端那种工程感角标）。"""
+    w_ = max(1.8, size * 0.085)
+    L = size * 0.85
+    pad = 14.0
+    out = []
+    for cx, cy, sx, sy in ((pad, pad, 1, 1), (w - pad, pad, -1, 1),
+                           (w - pad, h - pad, -1, -1), (pad, h - pad, 1, -1)):
+        out.append(_stroke("M%.1f %.1f L%.1f %.1f L%.1f %.1f"
+                           % (cx + sx * L, cy, cx, cy, cx, cy + sy * L), w_, opacity))
+    return "".join(out)
+
+
 DECOR = {
     # ★ 用户要求：删掉一种齿轮（gear2f1「小的蜡笔灰」—— 填充件在低透明度下最显脏）
     "gear1": gear1,
@@ -213,6 +338,11 @@ DECOR = {
     "star5": star5,
     "star5f": star5f,
     "cloud": cloud,          # 新增：蓝色云朵
+    # 极客系（2026 加主题系统时新增）：给终端 / 蓝图 / 北欧这类深色工程风用
+    "plus3": plus3,
+    "pixq": pixq,
+    "crosshair": crosshair,
+    "corners": corners,
 }
 
 DESC = {
@@ -223,6 +353,10 @@ DESC = {
     "star5": "五角星 · 空心",
     "star5f": "五角星 · 蜡笔黄",
     "cloud": "云朵 · 蜡笔蓝",
+    "plus3": "三个加号 · 像素",
+    "pixq": "像素问号 · 方块拼",
+    "crosshair": "十字准星 · 圆+十字",
+    "corners": "四角括线 · 取景框",
 }
 
 
